@@ -18,7 +18,7 @@ class Nekomandos:
         ComandoRespuesta("hora rusa", hora.hora_zona_horaria("Europe/Moscow")),
         ComandoRespuesta("hora venezuela", "Sin comida no hay hora."),
         ComandoRespuesta("pole canaria", "A las 12:00 de canarias"),
-        ComandoRespuesta("pole peninsula", "A las 11:00 de canarias"),
+        ComandoRespuesta("pole peninsular", "A las 11:00 de canarias"),
         ComandoRespuesta("pole andaluza", "Hazla cuando quieras, pero a las 06:00 península está bien-nya."),
         ComandoRespuesta("pole patitos", "22:22 Tú puedes-nya!"),
         ComandoRespuesta("pole cuack", "22:22 Tú puedes-nya!"),

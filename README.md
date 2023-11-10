@@ -11,8 +11,6 @@ Si se quiere crear a su propia Nekita, se debe crear un bot de telegram. Una vez
 
     python3 nekita.py
 
-De forma opcional se puede 
-
 # Instalación
 
 Paquetes a instalar con pip.

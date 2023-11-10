@@ -22,7 +22,7 @@ async def hola(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 ###################################################
 async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_time = datetime.datetime.now().strftime("%H:%M:%S")
-    await update.message.reply_text(f'Son las: {current_time}')
+    await update.message.send_message(f'Son las: {current_time}')
 
 
 ###################################################
@@ -30,7 +30,7 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 ###################################################
 async def get_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_day = datetime.datetime.now().strftime("%d-%m-%Y")
-    await update.message.reply_text(f'Hoy es: {current_day}')
+    await update.message.send_message(f'Hoy es: {current_day}')
 
 
 ###################################################
@@ -49,7 +49,7 @@ async def gato(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if cat_image_url:
         await update.message.reply_photo(photo=cat_image_url)
     else:
-        await update.message.reply_text("Todos los nekos están escondidos-nya")
+        await update.message.send_message("Todos los nekos están escondidos-nya")
 
 
 ###################################################
@@ -68,7 +68,7 @@ async def perro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if dog_image_url:
         await update.message.reply_photo(photo=dog_image_url)
     else:
-        await update.message.reply_text("Ahora mismo no veo ningún perrito-nya")
+        await update.message.send_message("Ahora mismo no veo ningún perrito-nya")
 
 
 ###################################################
@@ -83,7 +83,7 @@ async def cangrejo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if cangrejo_image_url:
         await update.message.reply_photo(photo=cangrejo_image_url)
     else:
-        await update.message.reply_text("Ahora mismo no veo ningún cangrejito-nya")
+        await update.message.send_message("Ahora mismo no veo ningún cangrejito-nya")
 
 
 ###################################################
@@ -93,9 +93,9 @@ async def moneda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     moneda_image_url = scraping.obtener_enlace_moneda()
     response = requests.get(moneda_image_url)
     if moneda_image_url:
-        await update.message.reply_photo(photo=moneda_image_url)
+        await update.message.send_message(photo=moneda_image_url)
     else:
-        await update.message.reply_text("Ahora mismo no veo ningún cangrejito-nya")
+        await update.message.send_message("Ahora mismo no veo ningún cangrejito-nya")
 
 
 ###################################################
@@ -151,7 +151,26 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     '\n/cangrejo'+
     '\n/dia'+
     '\n/id'+
-    '\nY muchos otros comandos más directamente escritos!')
+    '\n¡Y muchos otros comandos más directamente escritos! Como por ejemplo:'+
+    '\nHola china'+
+    '\nHora'+
+    '\nHora canaria'+
+    '\nHora rusa'+
+    '\nHora venezuela'+
+    '\nPole canaria'+
+    '\nPole peninsular'+
+    '\nPole andaluza'+
+    '\nPole patitos'+
+    '\nPole cuack'+
+    '\nDobby'+
+    '\n:)'+
+    '\n:('+
+    '\n:3'+
+    '\nBuenos días'+
+    '\nBuenas tardes'+
+    '\nBuenas noches'+
+    '\nBuenas'+
+    '\nHola')
 
 
 ###################################################

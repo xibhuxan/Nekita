@@ -47,7 +47,7 @@ def get_random_cat_image():
 async def gato(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cat_image_url = get_random_cat_image()
     if cat_image_url:
-        await update.message.reply_photo(photo=cat_image_url)
+        await update.message.send_message(photo=cat_image_url)
     else:
         await update.message.send_message("Todos los nekos están escondidos-nya")
 
@@ -66,7 +66,7 @@ def get_random_dog_image():
 async def perro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     dog_image_url = get_random_dog_image()
     if dog_image_url:
-        await update.message.reply_photo(photo=dog_image_url)
+        await update.message.send_message(photo=dog_image_url)
     else:
         await update.message.send_message("Ahora mismo no veo ningún perrito-nya")
 
@@ -81,7 +81,7 @@ async def cangrejo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cangrejo_image_url = cangrejo_image_url1 + numero + cangrejo_image_url2
     response = requests.get(cangrejo_image_url)
     if cangrejo_image_url:
-        await update.message.reply_photo(photo=cangrejo_image_url)
+        await update.message.send_message(photo=cangrejo_image_url)
     else:
         await update.message.send_message("Ahora mismo no veo ningún cangrejito-nya")
 

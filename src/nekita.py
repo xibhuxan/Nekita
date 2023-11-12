@@ -14,7 +14,7 @@ token = config.token
 ####Saludo
 ###################################################
 async def hola(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f'Hola {update.effective_user.first_name}-nya.')
+    await update.message.reply_text(f'Hola {update.effective_user.username}-nya.')
 
 
 ###################################################

@@ -22,7 +22,7 @@ async def hola(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 ###################################################
 async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_time = datetime.datetime.now().strftime("%H:%M:%S")
-    await update.message.send_message(f'Son las: {current_time}')
+    await context.bot.send_message(f'Son las: {current_time}')
 
 
 ###################################################
@@ -30,7 +30,7 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 ###################################################
 async def get_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_day = datetime.datetime.now().strftime("%d-%m-%Y")
-    await update.message.send_message(f'Hoy es: {current_day}')
+    await context.bot.send_message(f'Hoy es: {current_day}')
 
 
 ###################################################
@@ -47,9 +47,9 @@ def get_random_cat_image():
 async def gato(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cat_image_url = get_random_cat_image()
     if cat_image_url:
-        await update.message.send_message(photo=cat_image_url)
+        await update.message.reply_photo(photo=cat_image_url)
     else:
-        await update.message.send_message("Todos los nekos están escondidos-nya")
+        await context.bot.send_message("Todos los nekos están escondidos-nya")
 
 
 ###################################################
@@ -66,9 +66,9 @@ def get_random_dog_image():
 async def perro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     dog_image_url = get_random_dog_image()
     if dog_image_url:
-        await update.message.send_message(photo=dog_image_url)
+        await update.message.reply_photo(photo=dog_image_url)
     else:
-        await update.message.send_message("Ahora mismo no veo ningún perrito-nya")
+        await context.bot.send_message("Ahora mismo no veo ningún perrito-nya")
 
 
 ###################################################
@@ -81,9 +81,9 @@ async def cangrejo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cangrejo_image_url = cangrejo_image_url1 + numero + cangrejo_image_url2
     response = requests.get(cangrejo_image_url)
     if cangrejo_image_url:
-        await update.message.send_message(photo=cangrejo_image_url)
+        await update.message.reply_photo(photo=cangrejo_image_url)
     else:
-        await update.message.send_message("Ahora mismo no veo ningún cangrejito-nya")
+        await context.bot.send_message("Ahora mismo no veo ningún cangrejito-nya")
 
 
 ###################################################
@@ -93,9 +93,9 @@ async def moneda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     moneda_image_url = scraping.obtener_enlace_moneda()
     response = requests.get(moneda_image_url)
     if moneda_image_url:
-        await update.message.send_message(photo=moneda_image_url)
+        await update.message.reply_photo(photo=moneda_image_url)
     else:
-        await update.message.send_message("Ahora mismo no veo ningún cangrejito-nya")
+        await update.message.reply_text("Ahora mismo no veo ninguna monedita-nya")
 
 
 ###################################################
@@ -116,8 +116,8 @@ async def manejar_mensajes(update, context):
     contenido = unidecode(mensaje.text.lower())
     nekomandos = nekomando.Nekomandos(mensaje)
 
-    await manejar_pole(update, context)
-    
+    await pole.handle_message(update, context)
+
     for comando_respuesta in nekomandos.comandos_respuestas:
         if contenido == comando_respuesta.comando:
             await context.bot.send_message(chat_id=chat_id, text=comando_respuesta.respuesta)
@@ -134,15 +134,15 @@ async def manejar_pole(update, context):
     contenido = unidecode(mensaje.text.lower())
     
     
-    if contenido == "oro":
-        pole.handle_message(update, context)
+    
+    await pole.handle_message(update, context)
             
 
 ###################################################
 ####Help
 ###################################################
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f'Mis comandos son los siguientes-nya'
+    await context.bot.send_message(f'Mis comandos son los siguientes-nya'
     '\n/start'+    
     '\n/hola'+
     '\n/help'+
@@ -178,7 +178,8 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 ###################################################
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f'Puedo hacer muchas cosas por tu grupo. Soy una sustituta definitiva para que podáis hacer poles, enviar nekos a tu amigo favorito y mucho más. Pregúntame qué puedo hacer con /help')
-
+async def borrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    pole.poles_hechas.clear()
 
 async def guardar_puntuaciones_programada(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     t = datetime.time(hour=10, minute=00, second=00)
@@ -190,6 +191,7 @@ async def guardar_puntuaciones_programada(update: Update, context: ContextTypes.
 if __name__ == "__main__":
     app = ApplicationBuilder().token(token).build()
 
+    app.add_handler(CommandHandler("del", borrar))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("hola", hola))
     app.add_handler(CommandHandler("help", help))

@@ -21,7 +21,7 @@ def obtener_enlace_moneda():
 
 
         cookies = {"cookie_name": "cookie_value"}
-        url = "https://www.dreamstime.com/photos-images/coins.html"
+        url = "https://www.dreamstime.com/photos-images/coin.html"
 
         # Realizar la solicitud GET a la URL
         respuesta = requests.get(url, headers=headers, cookies=cookies)

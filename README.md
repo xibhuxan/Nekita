@@ -5,9 +5,11 @@
 No dejes de lado a Nekita, yo nunca te dejaría-nya.
 
 # Uso
-Cualquier persona puede usar a Nekita añadiendo a @NekoMegaBot a su grupo de telegram o directamente interactuando con ella en un chat privado.
+Cualquier persona puede usar a Nekita añadiendo a [@NekoMegaBot](https://t.me/NekoMegaBot) a su grupo de telegram o directamente interactuando con ella en un chat privado.
 
-Si se quiere crear a su propia Nekita, se debe crear un bot de telegram. Una vez hecho, adquirir el Token, descargar el repositorio, colocar el Token en el archivo de config.py y ejecutar el programa principal.
+Existe un grupo de asistencia, soporte y sugerencias de funcionalidades, este es [@NekoMegaBotSoporte](https://t.me/NekoMegaBotSoporte).
+
+Si se quiere crear a su propia Nekita, se debe crear un bot de telegram con BotFather. Una vez hecho, adquirir el Token, descargar el repositorio, colocar el Token en el archivo de config.py y ejecutar el programa principal.
 
     ./nekita.py
 

@@ -43,12 +43,12 @@ Y todos los que te vaya pidiendo que no tengas.
 
 # Changelog
 
-v0.2
+v0.2  
 Realizado Pole.
 Persistencia de los puntos con guardado diario y manual.
 Carga de los puntos al arrancar el programa.
 
-v0.1
+v0.1  
 Primer commit!
 
 

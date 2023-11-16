@@ -9,7 +9,7 @@ Cualquier persona puede usar a Nekita añadiendo a @NekoMegaBot a su grupo de te
 
 Si se quiere crear a su propia Nekita, se debe crear un bot de telegram. Una vez hecho, adquirir el Token, descargar el repositorio, colocar el Token en el archivo de config.py y ejecutar el programa principal.
 
-    python3 nekita.py
+    ./nekita.py
 
 # Instalación
 

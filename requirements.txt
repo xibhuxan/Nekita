@@ -2,3 +2,4 @@ python-telegram-bot[all]
 schedule
 unidecode
 bs4
+requests

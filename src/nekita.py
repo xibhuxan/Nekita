@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 
+""" Este es el bot Nekita.
+Para más información, visita https://github.com/xibhuxan/Nekita
+También el grupo de la comunidad t.me/NekoMegaBot
+"""
+
+__version__ = '0.3'
+__author__ = 'Xibhuxan - Carlos'
+
 #t.me/NekoMegaBot
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackContext
 from unidecode import unidecode
+import asyncio
 import datetime, requests
 import random
 import hora, scraping, nekomando, persistencia, config
@@ -237,12 +246,30 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f'Puedo hacer muchas cosas por tu grupo. Soy una sustituta definitiva para que podáis hacer poles, enviar nekos a tu amigo favorito y mucho más. Pregúntame qué puedo hacer con /help')
 
+
+###################################################
+####Saludo
+###################################################
+async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tasks = [update.message.reply_text(f"{member.full_name} acaba de entrar-nya!") for member in update.message.new_chat_members]
+    await asyncio.gather(*tasks)
+
+###################################################
+####Despedida
+###################################################
+async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Obtener el usuario que abandonó el grupo
+    left_member = update.message.left_chat_member
+    if left_member:
+        # Enviar un mensaje para indicar que el usuario ha abandonado el grupo
+        await update.message.reply_text(f"{left_member.full_name} just left the group")
+
 ###################################################
 ####Temporizadores
 ###################################################
 
-async def arranque(context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id = config.USUARIO_MASTER, text=f"Arranqué")
+#async def arranque(context: ContextTypes.DEFAULT_TYPE):
+#    await context.bot.send_message(chat_id = config.USUARIO_MASTER, text=f"Arranqué")
 
 async def guardar_puntuaciones_programada(context: ContextTypes.DEFAULT_TYPE):
     persistencia.guardar_datos(lista_chat_telegram, "grupos_pole.pkl")
@@ -268,7 +295,7 @@ if __name__ == "__main__":
 
     temporizador = app.job_queue
 
-    temporizador.run_once(arranque, 1)
+#    temporizador.run_once(arranque, 1)
     temporizador.run_once(cargar_puntuaciones_programada, 1)
 
     hora_limpieza = datetime.time(hour=22, minute=59, second=59)
@@ -290,6 +317,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("id", obtener_id_grupo))
     app.add_handler(CommandHandler("pole", mostrar_puntos))
     app.add_handler(CommandHandler("guardar", guardar_puntuaciones_programada1))
+    app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, remove_group))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, add_group))
     app.add_handler(MessageHandler(filters.TEXT, manejar_mensajes))
     
 

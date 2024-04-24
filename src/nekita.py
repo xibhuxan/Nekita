@@ -262,7 +262,7 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     left_member = update.message.left_chat_member
     if left_member:
         # Enviar un mensaje para indicar que el usuario ha abandonado el grupo
-        await update.message.reply_text(f"{left_member.full_name} just left the group")
+        await update.message.reply_text(f"{left_member.full_name} ha dejado el grupo-nya!!")
 
 ###################################################
 ####Temporizadores

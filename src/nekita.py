@@ -248,21 +248,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 ###################################################
-####Saludo
+####Saludo y despedida
 ###################################################
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tasks = [update.message.reply_text(f"{member.full_name} acaba de entrar-nya!") for member in update.message.new_chat_members]
-    await asyncio.gather(*tasks)
-
-###################################################
-####Despedida
-###################################################
-async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Obtener el usuario que abandonó el grupo
-    left_member = update.message.left_chat_member
-    if left_member:
-        # Enviar un mensaje para indicar que el usuario ha abandonado el grupo
-        await update.message.reply_text(f"{left_member.full_name} ha dejado el grupo-nya!!")
+async def in_out_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    member = update.message
+    if member.new_chat_members:
+        await update.message.reply_text(f'Hola {member.from_user.first_name}, saluda a tus tomodachis-nya!! (^_^)')
+    if member.left_chat_member:
+        await update.message.reply_text(f'Nuestro amigo {member.from_user.first_name} abandona el grupo.')
 
 ###################################################
 ####Temporizadores
@@ -317,8 +310,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("id", obtener_id_grupo))
     app.add_handler(CommandHandler("pole", mostrar_puntos))
     app.add_handler(CommandHandler("guardar", guardar_puntuaciones_programada1))
-    app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, remove_group))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, add_group))
+    app.add_handler(MessageHandler(filters.StatusUpdate.ALL, in_out_member))
     app.add_handler(MessageHandler(filters.TEXT, manejar_mensajes))
     
 

@@ -230,6 +230,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     '\nPole patitos'+
     '\nPole cuack'+
     '\nDobby'+
+    '\nPLC'+
     '\n:)'+
     '\n:('+
     '\n:3'+

@@ -40,4 +40,5 @@ class Nekomandos:
         ComandoRespuesta("buenas noches", f"Buenas noches {self.nombre}, que duermas bien-NYA!!"),
         ComandoRespuesta("buenas", f"Hola, {self.nombre}, ¿qué tal?"),
         ComandoRespuesta("hola", f"Hola, {self.nombre}, ¿qué tal?"),
+        ComandoRespuesta("PLC", f"Eso te lo hago yo con un Arduino de 3 euros."),
     ]

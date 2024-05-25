@@ -73,9 +73,7 @@ Ejecutar a nekita.
 
 # Objetivos por conseguir
 
-- [ ] Pole canaria
-- [ ] Pole andaluza
-- [ ] Pole patitos
+- [ ] Pole personalizada
 - [ ] Mensajes pole
 - [ ] Paulo
 - [ ] Dragonite

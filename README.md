@@ -80,17 +80,17 @@ Ejecutar a nekita.
 
 # Changelog
 
-v0.3
-Modificado README.md - Añadido explicación puesta en marcha.
-Añadido saludo y despedida al entrar y salir del grupo.
+v0.3  
+Modificado README.md - Añadido explicación puesta en marcha.  
+Añadido saludo y despedida al entrar y salir del grupo.  
 
-v0.2
-Realizado Pole.
-Persistencia de los puntos con guardado diario y manual.
-Carga de los puntos al arrancar el programa.
+v0.2  
+Realizado Pole.  
+Persistencia de los puntos con guardado diario y manual.  
+Carga de los puntos al arrancar el programa.  
 
-v0.1
-Primer commit!
+v0.1  
+Primer commit!  
 
 
 

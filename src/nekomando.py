@@ -27,6 +27,7 @@ class Nekomandos:
         ComandoRespuesta("pole canaria", "A las 12:00 de canarias"),
         ComandoRespuesta("pole peninsular", "A las 11:00 de canarias"),
         ComandoRespuesta("pole andaluza", "Hazla cuando quieras, pero a las 06:00 península está bien-nya."),
+        ComandoRespuesta("pole palitos", "A las 11:11, tú puedes-nya!"),
         ComandoRespuesta("pole patitos", "A las 22:22, tú puedes-nya!"),
         ComandoRespuesta("pole cuack", "A las 22:22, tú puedes-nya!"),
         ComandoRespuesta("pole patitos canarias", "A las 22:22, tú puedes-nya!"),

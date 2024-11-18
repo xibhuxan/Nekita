@@ -227,6 +227,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     '\nPole canaria'+
     '\nPole peninsular'+
     '\nPole andaluza'+
+    '\nPole palitos'+
     '\nPole patitos'+
     '\nPole cuack'+
     '\nDobby'+

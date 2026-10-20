@@ -1,0 +1,807 @@
+# 🐱 Nekita (Python) — Especificación y plan por fases
+
+> **Estado: solo especificación. No hay código todavía.** Define *qué* debe hacer
+> el bot, *con qué* se construye, *cómo* se organiza y *en qué orden* se hace,
+> con criterios de "terminado" medibles por fase.
+>
+> Rama `python`: historial nuevo (huérfana), sin código ni commits de la versión anterior.
+
+**Marcas de evidencia**
+
+| Marca | Significado |
+|---|---|
+| ✅ | Comprobado en esta máquina al preparar la especificación |
+| 🔎 | Tomado del comportamiento de la versión Node/NestJS, leído del código |
+| 🆕 | Mejora o cambio de diseño respecto a la versión anterior |
+| ⚠️ | Suposición o dato externo **sin verificar**: comprobar antes de depender de él |
+
+---
+
+## 1. Objetivo y alcance
+
+**Objetivo:** reescribir Nekita en **Python + FastAPI**, con buena estructura,
+**SQLite** como base de datos y una forma muy fácil de añadir funciones nuevas,
+sin sobreingeniería y sobre un servidor pequeño.
+
+**Debe:**
+1. Conservar **todas las funciones actuales** (sección 4), con los mismos textos.
+2. Guardar el estado en SQLite con escritura inmediata (no "un guardado al día").
+3. Arrancar, parar y recuperarse de fallos sin perder datos ni repetir ganadores.
+4. Permitir añadir una función nueva **creando una carpeta**, sin tocar el núcleo (sección 6).
+5. Poder probarse de forma automática, incluido el flujo completo de Telegram sin red.
+
+**No es objetivo (ahora):** IA/LLM, panel web, varios idiomas, métricas con
+Prometheus, webhook (la estructura deja hueco: Fase 8), alta disponibilidad o
+varias instancias (es **una** instancia con un SQLite local), ORM, colas, Redis.
+
+---
+
+## 2. Entorno de destino y presupuesto de recursos
+
+| Recurso | Valor | Consecuencia |
+|---|---|---|
+| CPU | 1 core | Todo asíncrono en un solo proceso; sin varios workers |
+| RAM | 1 GB | Proceso único; límite de memoria en systemd; descargas con tope |
+| Disco | 8 GB | Logs con límite, copias rotadas, sin imágenes en disco |
+| SO | Debian estable | Python y SQLite del sistema |
+
+- ⚠️ **Python en destino:** Debian 13 trae Python 3.13 y es la versión objetivo (`requires-python >=3.13`). Comprobar en la máquina real: `python3 --version` y `python3 -c "import sqlite3; print(sqlite3.sqlite_version)"`. Se necesita **SQLite ≥ 3.37** para tablas `STRICT`; si fuera menor se quita `STRICT` y se compensa con `CHECK`.
+- ✅ **En desarrollo** el Python del sistema es 3.14; `uv` descargó 3.13.16 y resolvió sin conflictos aiogram, fastapi, uvicorn, pydantic-settings, httpx, pytest, pytest-asyncio, pytest-cov, ruff y mypy. Se desarrolla con **3.13** para igualar el destino.
+
+**Presupuesto (hipótesis a medir en la Fase 6, no cifras garantizadas):**
+
+| Métrica | Objetivo |
+|---|---|
+| RSS en reposo | ≤ 150 MB |
+| RSS en pico (descargando una imagen) | ≤ 250 MB |
+| CPU en reposo | < 2 % de un core |
+| venv + código en disco | ≤ 400 MB |
+| Arranque hasta "bot listo" | ≤ 5 s |
+
+- `systemd` con `MemoryMax=400M`: si algo se desboca se reinicia solo el bot, no la máquina.
+- ⚠️ Con 1 GB conviene un **swap de ~512 MB** como colchón; decidirlo en la Fase 6 según lo que ya tenga la máquina.
+
+---
+## 3. Decisiones de tecnología
+
+Resueltas por defecto con el criterio "lo más simple que cumple". Son
+**reversibles**; la sección 16 lista las que conviene que confirmes.
+
+| # | Tema | Elegido | Por qué | Descartado |
+|---|---|---|---|---|
+| 1 | Cliente de Telegram | **aiogram 3** (✅ 3.31.0) | Asíncrono nativo; `Router` por módulo encaja con "una carpeta por función"; filtros, middlewares y `flags` | python-telegram-bot (válido, peor encaje de routers/flags) |
+| 2 | Web | **FastAPI** (✅ 0.148.0) + **uvicorn** (✅ 0.54.0) | Pedido explícito; `lifespan`, `/health` HTTP y hueco para admin/webhook | — |
+| 3 | Recepción | **Long polling** | Sin dominio, HTTPS ni puertos abiertos | Webhook (Fase 8, opcional) |
+| 4 | Base de datos | **SQLite** con **aiosqlite**, SQL explícito | Un fichero, ACID, sin servidor | PostgreSQL; SQLAlchemy+Alembic (pesados para ~7 tablas) |
+| 5 | Migraciones | Ficheros `NNNN_nombre.sql` + `PRAGMA user_version`, ejecutor propio (~40 líneas) | Transparente y suficiente | Alembic |
+| 6 | Configuración | **pydantic-settings** (✅ 2.16.0) | Errores legibles, variables `NEKITA_*` | `os.environ` a mano |
+| 7 | HTTP saliente | **httpx** (✅ 0.28.1), un único `AsyncClient` | Timeouts, límites, fácil de simular en tests | requests (bloqueante) |
+| 8 | Tareas programadas | Bucle propio sobre `asyncio` + `zoneinfo` | Solo habrá 1–2 (copias, limpieza) | APScheduler (se adopta si hay ≥3 tareas o recordatorios) |
+| 9 | Entorno | **uv** + `pyproject.toml` + `uv.lock` | Instalaciones reproducibles | pip + requirements.txt |
+| 10 | Calidad | **ruff**, **mypy --strict**, **pytest**, **pytest-asyncio**, **pytest-cov**, **pip-audit** | ✅ instalables | flake8/black/isort por separado |
+| 11 | Despliegue | **systemd** en Debian, venv en `/opt/nekita` | Sin demonio Docker; sandbox y límites de systemd | Docker (opcional, `python:3.13-slim`) |
+| 12 | Licencia | GPL-3.0 (se mantiene `LICENSE`) | Sin cambios | — |
+
+**Dependencias de producción (solo estas):** `aiogram`, `fastapi`, `uvicorn`,
+`pydantic-settings`, `httpx`, `aiosqlite`, `tzdata`.
+**Solo desarrollo:** `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `mypy`, `pip-audit`.
+
+> ⚠️ `aiosqlite` **no se ha instalado ni probado** todavía; las demás versiones
+> sí se resolvieron. Es una dependencia pequeña (envoltorio de hilo sobre
+> `sqlite3`), pero se confirma en la Fase 0.
+
+**Sobre FastAPI, con honestidad:** para un bot que solo hace polling aporta
+poco *hoy*. Lo que da es (a) un `lifespan` que arranca y para polling, base de
+datos y tareas en un solo sitio, (b) un `/health` HTTP estándar para
+systemd/monitorización y (c) el lugar natural para un panel de administración
+o un webhook más adelante. Su coste en RAM se **mide** en la Fase 6 (⚠️ no se
+ha medido).
+
+**Sobre aiogram y el orden de mensajes:** aiogram procesa cada update como una
+tarea independiente (`handle_as_tasks=True`), así que dos mensajes del mismo
+chat pueden solaparse. La versión Node serializaba por chat. 🆕 Aquí se añade un
+**middleware que serializa por `chat_id`** (un `asyncio.Lock` por chat, con
+limpieza de los inactivos) para que "oro" y "plata" enviados seguidos se
+evalúen en orden. Es imprescindible para la pole (sección 7.3) y se prueba.
+
+---
+
+## 4. Inventario funcional (lo que debe seguir haciendo)
+
+Es el **contrato de compatibilidad**, tomado del código Node 🔎. Los textos
+exactos están en el Apéndice A.
+
+### 4.1 Comandos con `/`
+
+| Comando | Categoría | Descripción (menú de Telegram) | Qué hace |
+|---|---|---|---|
+| `/start` | start | Mensaje de bienvenida | Texto de bienvenida |
+| `/hola` | start | Saluda al usuario | `Hola, <nombre>-nya.` |
+| `/help` | start | Lista de comandos disponibles | Lista **generada** desde el registro, por categoría; oculta los de admin a quien no lo es; añade el párrafo de frases libres |
+| `/hora` | info | Hora actual en España | `Son las: HH:MM:SS` en `NEKITA_TZ` |
+| `/dia` | info | Fecha actual | `Hoy es: DD-MM-YYYY` en `NEKITA_TZ` |
+| `/id` | info | ID del chat actual | `El ID de este grupo es: <chat_id>` |
+| `/neko` | images | Imagen aleatoria de un gato | Ver 4.4 |
+| `/perro` | images | Imagen aleatoria de un perro | Ver 4.4 |
+| `/cangrejo` | images | Imagen aleatoria de un cangrejo | Ver 4.4 |
+| `/moneda` | images | Imagen aleatoria de una moneda | Ver 4.4 |
+| `/pole` | pole | Leaderboard de pole del grupo | Ver 4.3 |
+| `/health` | meta | Comprueba que el bot está vivo | `🐱 Nekita está viva! v<versión>` |
+| `/stats` | meta | Estadísticas del bot (solo admin) | Ver 4.6 |
+
+✅ Descripciones y categorías **verificadas** una a una contra los `@Command()` de la rama `node-final`.
+
+Reglas comunes:
+- Los comandos se **publican solos** en el menú "/" (`setMyCommands`); los `admin_only` **no**. Best-effort: si falla, el bot arranca igualmente.
+- `/comando@OtroBot` **no** lo atiende este bot.
+- Solo cuentan en estadísticas los comandos que terminaron **sin excepción**.
+- 🆕 La versión sale de **una sola fuente** (metadatos del paquete, `importlib.metadata`).
+- **Nombre en `/hola`:** `@username` o, si no hay, `first_name` ✅. **Ojo, en la pole es distinto:** se usa `username` **sin `@`** o, si no hay, `first_name` ✅ (ver 4.3). Se mantiene tal cual porque los puntos antiguos por nombre están guardados sin `@`.
+
+---
+### 4.2 Texto libre (sin `/`)
+
+Se evalúa en este orden y **el primero que responde consume el mensaje**:
+1. **Pole** (`oro`, `plata`, `bronce`): solo en grupos (4.3).
+2. **Nekomandos**: tabla frase → respuesta (4.5, Apéndice B).
+
+Lo que no es texto (fotos, ediciones, altas de miembros) no se toca.
+
+### 4.3 Pole
+
+Reglas 🔎 (sin cambios de comportamiento):
+- Solo en **grupos y supergrupos**. En privado, canales o mensajes sin usuario (admin anónimo) se **ignora**.
+- El mensaje, tras `strip()` y minúsculas, debe ser **exactamente** `oro`, `plata` o `bronce`.
+- Se gana por orden: oro (**3 pts**) → plata (**2**) → bronce (**1**). Solo se puede ganar la posición que toca.
+- **Una persona solo gana una posición por jornada.**
+- Al ganar: `¡Enhorabuena <nombre>! Has ganado la pole-nya` / `la plata-nya` / `el bronce-nya` (oro = "la pole"). `<nombre>` es `username` **sin `@`** o, si no hay, `first_name`.
+- Los puntos pertenecen al **usuario (id de Telegram)**, no al nombre; el ranking muestra el nombre actual.
+- `/pole` muestra el ranking del grupo (🥇 🥈 🥉, luego `#4`, `#5`…).
+- Los puntos antiguos guardados **por nombre** (Node v1) se conservan aparte (`legacy`) y se asignan al usuario cuando puntúa con ese nombre; mientras tanto se muestran por su nombre.
+
+**La "jornada de pole"** cambia a las `22:59` hora `NEKITA_TZ` (configurable; mismo valor por defecto que antes).
+
+> 🆕 **Ya no hay cron de "reset".** La jornada se **calcula** a partir de la
+> fecha del propio mensaje (`message.date`), así que es correcta aunque el bot
+> haya estado parado o se reinicie. Elimina de raíz los dos fallos de Node:
+> ganadores de ayer tras un fallo, y reset perdido si el bot está caído a las 22:59.
+
+Regla: se toma la hora local del mensaje en `NEKITA_TZ`; si `hora:minuto` local
+es **≥ corte**, la jornada es **el día siguiente**; si no, hoy. Se comparan
+**campos** de fecha/hora (no se suman milisegundos), para que los cambios de
+hora de marzo y octubre no la desplacen.
+
+🆕 El ranking muestra como máximo **20** entradas (límite de 4096 caracteres
+de Telegram) y la concesión es **atómica en SQL** (7.3): dos "oro" simultáneos
+nunca dan dos oros.
+
+### 4.4 Imágenes
+
+| Comando | Fuente 🔎 | Particularidades |
+|---|---|---|
+| `/neko` | TheCatAPI (`limit=10`) | Lote de 10 URLs |
+| `/perro` | random.dog (`woof.json?filter=mp4,webm`) | 5 peticiones en paralelo, se descartan vídeos y duplicados, reintentos por petición |
+| `/cangrejo` | generatorfun.com (`Random-Crab-image-{1..19}.jpg`) | Lista fija de 19 |
+| `/moneda` | Wikimedia Commons (API pública) | Categoría al azar (`Euro_coins`, `Gold_coins`, `Silver_coins`, `Coins_of_Spain`); solo `image/jpeg` y `image/png`; miniatura de 800 px; User-Agent identificativo obligatorio |
+
+- **Caché de lotes** (TTL `NEKITA_CACHE_SEGUNDOS`, 300 s): un lote por clave y **cada petición consume una URL distinta**; cinco `/neko` seguidos no repiten. Lote vacío o caducado → se pide otro.
+- 🆕 **Una sola petición de relleno por clave a la vez** (`asyncio.Lock`): 20 usuarios pidiendo `/neko` a la vez no hacen 20 llamadas a la API.
+- 🆕 `/cangrejo` ya no hace un `HEAD` por petición; la lista se valida con un test *live* periódico.
+- **Envío según extensión:** `gif` → `sendAnimation`; `mp4`/`webm` → `sendVideo`; resto → `sendPhoto`.
+- **Plan B:** si Telegram no puede bajar la URL, el bot la **descarga** (máx. 10 MB, 15 s, con User-Agent) y la **sube**; si como foto la rechaza, la manda como **documento**. Animaciones y vídeos no tienen plan C: se informa del error.
+- 🆕 Descargas en **streaming con tope de tamaño**, **máx. 2 simultáneas** (protege la RAM) y solo de URLs `https` de los **dominios permitidos** de cada proveedor (evita SSRF).
+- Sin imagen → mensaje "Ahora mismo no veo…"; excepción → mensaje de error del comando (Apéndice A).
+- ⚠️ Límites de Telegram (foto por URL ≈ 5 MB, subida ≈ 10 MB) tomados de la documentación de la Bot API; verificar al implementar.
+
+### 4.5 Nekomandos
+
+- Tabla `frase → respuesta` en un **fichero de datos** versionado (Apéndice B) más **overrides editables** sin redesplegar (7.5, Fase 4).
+- **Normalización única** para claves y consultas: Unicode NFD, quitar diacríticos, minúsculas, espacios colapsados, `strip()`. `"Buenos días"`, `"buenos dias"` y `"  BUENOS   DÍAS "` coinciden.
+- Token **`{hora:<zona IANA>}`** → hora actual `HH:MM` de esa zona (respeta horario de verano). Zona inválida: se deja el token y se avisa en el log; **nunca rompe la respuesta**.
+- Overrides con clave o valor vacío, o no-texto, se **rechazan con aviso** y no impiden arrancar.
+
+### 4.6 Transversal
+
+- **Admin:** el usuario cuyo id sea `NEKITA_MASTER_ID`; se compara el id del **usuario**, nunca del chat. Un valor no numérico se **ignora con aviso** (admin deshabilitado) y no impide arrancar. Intento de un no-admin: `Este comando es solo para el administrador-nya.`
+- **Errores en un comando:** se registra con un código corto (3 bytes hex, p. ej. `a3f09c`) y se responde `Algo ha fallado-nya (ref. a3f09c)`. Si ni eso se puede enviar, se registra y no se propaga.
+- **Estadísticas:** contador por comando. 🆕 Se separan **comandos usados** y **poles concedidas** (antes se sumaban en "Comandos registrados").
+- **`/stats` (admin):** versión, grupos con actividad, comandos usados, poles concedidas y top-10 de comandos.
+- **Privacidad:** por defecto **no se registra el texto** de los mensajes; solo con `NEKITA_LOG_MESSAGES=true` y nivel `DEBUG`.
+- **Modo de privacidad de Telegram:** por defecto el bot en grupos solo ve comandos y menciones; para que vea "oro", "Hora china"… hay que **desactivar *Group Privacy*** en @BotFather o hacerlo administrador. 🆕 Al arrancar, si `getMe().can_read_all_group_messages` es `false`, se avisa en el log. Se documenta en el README.
+- **Apagado limpio:** con SIGTERM/SIGINT se detiene el polling, se esperan los manejadores en curso (con tope) y se cierra la base de datos.
+- **Fallo de polling irrecuperable** (token revocado, 409 por otra instancia): el proceso **termina con código ≠ 0** para que systemd lo reinicie; nunca "vivo pero sordo".
+
+---
+## 5. Arquitectura
+
+Un **monolito modular** en un solo proceso. Reglas de dependencia (se hacen
+cumplir con `ruff` `TID` y un test, Fase 0):
+
+```
+features/*  ──►  core/*          (nunca al revés)
+features/A  ──✗  features/B      (se comunican por servicios del core o por la BD)
+```
+
+### 5.1 Estructura de carpetas
+
+```
+nekita/
+├── pyproject.toml            uv.lock
+├── .env.example              README.md   LICENSE   CHANGELOG.md
+├── DOCS/                     ESPECIFICACION.md (este fichero), ADR/ (decisiones)
+├── deploy/                   nekita.service, nekita-backup.*, logrotate, install.sh
+├── migrations/               0001_inicial.sql, 0002_...sql
+├── src/nekita/
+│   ├── __main__.py           arranque: `python -m nekita`
+│   ├── app.py                create_app() → FastAPI con lifespan
+│   ├── config.py             Settings (pydantic-settings), validado una vez
+│   ├── core/
+│   │   ├── bot.py            Bot + Dispatcher + registro de features
+│   │   ├── feature.py        contrato Feature / Command (6.1)
+│   │   ├── registry.py       comandos descubiertos, /help, setMyCommands
+│   │   ├── middlewares.py    serialización por chat, usuario, stats, errores
+│   │   ├── errors.py         respuesta "Algo ha fallado-nya (ref. …)"
+│   │   ├── db.py             conexión SQLite, PRAGMAs, transacciones, migraciones
+│   │   ├── scheduler.py      tareas periódicas (asyncio + zoneinfo)
+│   │   ├── http.py           AsyncClient compartido + descarga segura
+│   │   ├── timeutil.py       jornada, formatos, zonas
+│   │   └── texts.py          normalización de texto, formateo de nombres
+│   └── features/
+│       ├── start/   (start, hola, help)
+│       ├── info/    (hora, dia, id)
+│       ├── images/  (neko, perro, cangrejo, moneda) + providers/ + cache
+│       ├── pole/    (service, repo, router, ranking)
+│       ├── nekomando/ (service, router, data/nekomandos.json)
+│       └── meta/    (health, stats)
+└── tests/
+    ├── unit/   integration/ (Telegram falso + BD en memoria)   live/
+    └── conftest.py
+```
+
+Cada `feature/` sigue la misma forma: `__init__.py` (expone `feature`),
+`router.py` (handlers aiogram), `service.py` (lógica pura, sin aiogram),
+`repo.py` (SQL, solo si guarda datos). **La lógica vive en `service.py` y se
+prueba sin Telegram.**
+
+### 5.2 Ciclo de vida (FastAPI `lifespan`)
+
+Arranque, en este orden (si algo falla → mensaje claro y `exit 1`):
+1. Cargar y validar `Settings` (una vez).
+2. Abrir SQLite, aplicar PRAGMAs, **migrar**, importar datos antiguos si procede (7.6).
+3. Crear el `AsyncClient` HTTP compartido.
+4. Crear `Bot`, registrar features, `getMe` (+ aviso de *Group Privacy*), `setMyCommands`.
+5. Lanzar el scheduler y la tarea de **polling** (con vigilancia: si termina con error, se cierra el proceso con código ≠ 0).
+6. FastAPI queda sirviendo `/health` y `/ready`.
+
+Parada (SIGTERM): parar polling → esperar manejadores en curso (tope 10 s) →
+parar scheduler → cerrar HTTP → `PRAGMA optimize` y cerrar SQLite.
+
+### 5.3 Endpoints HTTP
+
+| Ruta | Uso | Respuesta |
+|---|---|---|
+| `GET /health` | Vivo (para systemd/monitorización) | `200 {"status":"ok","version":…}` |
+| `GET /ready` | Listo de verdad | `200` si BD abierta **y** el polling reciente sigue vivo; `503` si no |
+
+Escuchan **solo en `127.0.0.1`** (puerto `NEKITA_HTTP_PORT`, 8080). Sin
+autenticación porque no se exponen; si algún día se abren, se añade token
+(Fase 8). El latido de "polling vivo" es una marca de tiempo en memoria que
+actualiza el propio bucle de polling.
+
+---
+
+## 6. Cómo añadir funciones (extensibilidad)
+
+### 6.1 Contrato
+
+Una *feature* es un objeto con un `aiogram.Router` y metadatos:
+
+```python
+# features/ejemplo/__init__.py  (ilustrativo, NO es código a implementar tal cual)
+feature = Feature(
+    name="ejemplo",
+    router=router,                  # handlers de la carpeta
+    commands=[CommandInfo("ejemplo", "Hace algo", category="otros", admin_only=False)],
+    migrations=None,                # opcional: carpeta propia de SQL
+    on_startup=None, on_shutdown=None,   # ganchos opcionales
+    jobs=[],                        # tareas periódicas opcionales
+)
+```
+
+El núcleo **descubre** todas las carpetas de `features/` (lista explícita en
+`features/__init__.py` en vez de importación mágica: más legible y mypy la
+entiende). Con eso, `/help`, el menú de Telegram, las estadísticas y el control
+de admin funcionan **sin tocar nada más**.
+
+### 6.2 Metadatos de comando (🔎 equivalente a `@Command()` de Node)
+
+`name`, `description`, `category`, `admin_only`. Se guardan como `flags` del
+handler de aiogram para que los middlewares los lean (admin, estadísticas).
+
+### 6.3 Receta "añadir `/dado`" (criterio de diseño medible)
+
+1. Crear `features/dado/` con `router.py`, `service.py` y `__init__.py`.
+2. Añadir **una línea** a `features/__init__.py`.
+3. Escribir `tests/unit/test_dado.py`.
+
+Sin editar `/help`, ni el menú, ni estadísticas, ni la configuración del
+núcleo. **Criterio de aceptación de la Fase 3:** un test que añade una feature
+de juguete y comprueba que aparece en `/help`, en `setMyCommands` y en
+`/stats`.
+
+### 6.4 Ampliaciones previstas (no se construyen ahora)
+
+| Idea | Dónde encaja | Requiere |
+|---|---|---|
+| Recordatorios de usuario | `features/recordatorios/` + tabla propia + `jobs` | Mini-planificador o APScheduler |
+| IA / LLM | `features/ia/` con proveedor detrás de una interfaz | Cuotas, límites por usuario, coste (ADR previo) |
+| Panel de administración | Rutas FastAPI en `features/admin/` | Autenticación obligatoria |
+| Webhook | Cambiar el modo de recepción en `core/bot.py` | Dominio + HTTPS |
+| Límite de uso por usuario | Middleware en `core/` | Tabla o contador en memoria |
+
+---
+## 7. Datos (SQLite)
+
+### 7.1 Ubicación y PRAGMAs
+
+- Fichero: `${NEKITA_DATA_DIR}/nekita.db` (por defecto `~/.nekita/data/`, el mismo directorio que la versión Node; `NEKITA_DATA_DIR` lo cambia).
+- Al abrir la conexión: `journal_mode=WAL`, `synchronous=NORMAL` (con WAL no se pierden commits ante un fallo del proceso; ante un corte de luz puede perderse la última transacción, aceptable aquí), `foreign_keys=ON`, `busy_timeout=5000`, `cache_size` pequeño (≈ 2 MB) y `temp_store=MEMORY`.
+- **Una única conexión** compartida (un solo proceso, escritor único). Las escrituras son transacciones cortas con `BEGIN IMMEDIATE`.
+- ⚠️ Con WAL el directorio debe ser un disco local (no NFS).
+
+### 7.2 Esquema inicial (`0001_inicial.sql`)
+
+Propuesta; se ajusta en la Fase 1. Tablas `STRICT` (ver sección 2 si SQLite < 3.37).
+
+```sql
+CREATE TABLE chats (            -- grupo que alguna vez generó actividad
+  chat_id     INTEGER PRIMARY KEY,
+  title       TEXT,
+  first_seen  TEXT NOT NULL,    -- ISO-8601 UTC
+  last_seen   TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE users (            -- el nombre visible es solo para mostrar
+  user_id     INTEGER PRIMARY KEY,
+  display     TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE pole_wins (        -- una fila por posición ganada: fuente de verdad
+  chat_id   INTEGER NOT NULL REFERENCES chats(chat_id),
+  day_key   TEXT    NOT NULL,   -- 'YYYY-MM-DD' de la jornada
+  position  INTEGER NOT NULL CHECK (position IN (0,1,2)),
+  user_id   INTEGER NOT NULL REFERENCES users(user_id),
+  won_at    TEXT    NOT NULL,   -- instante UTC del mensaje
+  PRIMARY KEY (chat_id, day_key, position),
+  UNIQUE      (chat_id, day_key, user_id)
+) STRICT;
+
+CREATE TABLE pole_legacy (      -- puntos de Node v1 (por nombre) sin reclamar
+  chat_id  INTEGER NOT NULL REFERENCES chats(chat_id),
+  name     TEXT    NOT NULL,
+  points   INTEGER NOT NULL CHECK (points >= 0),
+  PRIMARY KEY (chat_id, name)
+) STRICT;
+
+CREATE TABLE pole_adjust (      -- puntos importados o reclamados del legado
+  chat_id  INTEGER NOT NULL REFERENCES chats(chat_id),
+  user_id  INTEGER NOT NULL REFERENCES users(user_id),
+  points   INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, user_id)
+) STRICT;
+
+CREATE TABLE stats (            -- 'cmd:neko', 'pole:oro'
+  key    TEXT PRIMARY KEY,
+  count  INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+CREATE TABLE nekomando_overrides (   -- editables en caliente (opcional, Fase 4)
+  phrase    TEXT PRIMARY KEY,        -- ya normalizada
+  response  TEXT NOT NULL
+) STRICT;
+```
+
+Desaparece el estado en memoria `winners`/`nextPosition`: se **deriva** de
+`pole_wins` de la jornada actual.
+
+### 7.3 Pole en SQL (atómica y sin cron)
+
+Para un mensaje `oro|plata|bronce` de `user_id` en `chat_id`, en **una transacción**:
+
+1. `day_key` = jornada de `message.date` (4.3).
+2. `n` = nº de filas de `pole_wins` de `(chat_id, day_key)`; la posición que toca es `n` (si `n ≥ 3`, no hay nada que ganar).
+3. Si la palabra no corresponde a la posición `n` → no hace nada.
+4. `INSERT` en `pole_wins`. Si viola `UNIQUE(chat_id, day_key, user_id)` (ya ganó hoy) o la PK (otro se adelantó) → no concede. **La restricción de la BD es la garantía**, no el código.
+5. `UPSERT` en `users` (nombre actual), `INSERT OR IGNORE` en `chats`.
+6. Reclamar legado: si existe `pole_legacy(chat_id, name)` con el nombre del usuario, mover sus puntos a `pole_adjust` y borrar la fila.
+
+**Ranking:** puntos = `SUM(CASE position WHEN 0 THEN 3 WHEN 1 THEN 2 ELSE 1 END)` de `pole_wins` + `pole_adjust`, unido a `users.display`, más las filas de `pole_legacy` (por nombre); `ORDER BY puntos DESC, display LIMIT 20`.
+
+🆕 Como cada victoria es una fila con fecha, quedan gratis el histórico por día, "ganadores de ayer", estadísticas por mes y deshacer una victoria errónea, sin migración nueva.
+
+**Aceptación (tests):**
+- (a) Ganar a las 20:00, "reiniciar" a las 23:30 del mismo día → la pole del día siguiente se puede ganar.
+- (b) Bot parado entre las 22:59 y las 23:30 → el primer mensaje nuevo cuenta para la jornada nueva.
+- (c) 50 "oro" concurrentes → exactamente 1 oro.
+- (d) Cambios de hora de marzo y octubre, y suite con `TZ=UTC` y `TZ=Europe/Madrid`.
+
+---
+### 7.4 Estadísticas
+
+`stats(key,count)` con `INSERT … ON CONFLICT DO UPDATE SET count=count+1`. Para no escribir en disco por **cada** comando, los contadores se acumulan en memoria y se vuelcan cada 30 s y al parar (pérdida máxima aceptable: 30 s de contadores). **Los puntos de pole nunca pasan por aquí**: van directos a SQL en la misma transacción que la victoria.
+
+Claves: `cmd:<comando>` para comandos usados y `pole:oro|plata|bronce` para poles. 🆕 `/stats` los muestra por separado.
+
+### 7.5 Nekomandos
+
+Los **defaults** viven en `features/nekomando/data/nekomandos.json` (versionado, Apéndice B). Los **overrides** se leen de la tabla `nekomando_overrides` y, por compatibilidad 🔎, también de `~/.nekita/data/nekomandos.json` (`{"overrides": {...}}`) si existe: se importan a la tabla en el primer arranque y el fichero se renombra a `.importado`. Un comando de admin para editarlos es opcional (Fase 8).
+
+### 7.6 Importación desde Node (una sola vez)
+
+El fichero de Node (`grupos_pole.json`) 🔎 tiene esta forma:
+
+```json
+{ "chats": { "<chatId>": {
+    "schemaVersion": 2,
+    "winners": [123, 456],
+    "scores":  { "123": 7 },
+    "names":   { "123": "fulano" },
+    "legacyScores": { "mengano": 4 },
+    "nextPosition": 2 } },
+  "stats": { "neko": 12, "pole:oro": 3 } }
+```
+
+- **v1** (sin `schemaVersion`): `scores` está indexado por **nombre** → va a `pole_legacy`.
+- **v2:** `scores` por `userId` → `pole_adjust` (+ `users` desde `names`); `legacyScores` → `pole_legacy`. `winners` y `nextPosition` **se descartan** (son estado de una jornada ya caducada).
+- `stats`: las claves `pole:*` pasan tal cual; el resto se importa como `cmd:<clave>`.
+- **Idempotente:** solo se ejecuta si la BD es nueva (`PRAGMA user_version` = 0) **y** existe el fichero; después se renombra a `grupos_pole.json.importado`. Antes se **copia** siempre a `backups/`.
+- Un fichero corrupto **no tumba el arranque**: se aparta como `.corrupto`, se avisa y se empieza vacío.
+- ✅ **Dato real en esta máquina:** el `grupos_pole.json` de desarrollo está **vacío** (`{"chats": {}, "stats": {}}`), así que aquí no hay nada que migrar. ⚠️ La máquina de producción puede ser otra: se revisa allí antes de desplegar.
+- **Aceptación:** tests con ficheros v1, v2, mezclados, vacíos y corruptos.
+
+### 7.7 Copias de seguridad
+
+- Tarea diaria del scheduler: copia consistente con **`VACUUM INTO`** (o la API de backup de `sqlite3`) a `backups/nekita_AAAA-MM-DDTHH-MM-SS.db`. **Nunca `cp`** del fichero con WAL activo.
+- Retención: 7 diarias + 4 semanales. ⚠️ Tamaño esperado de la BD < 5 MB (estimación sin medir; con cientos de grupos seguiría siendo pequeña).
+- `PRAGMA integrity_check` semanal y siempre antes de restaurar.
+- **Restaurar** = parar el servicio, copiar la copia sobre `nekita.db`, borrar `-wal`/`-shm`, arrancar. Se documenta y se **prueba** en la Fase 6.
+- Una copia fuera de la máquina (otro disco o remoto) queda como recomendación, no como requisito.
+
+---
+
+## 8. Configuración
+
+Variables de entorno (`.env` en desarrollo; `EnvironmentFile` en systemd).
+Se validan **una sola vez** al arrancar: un error se muestra legible y sale con código 1.
+
+| Variable | Obligatoria | Por defecto | Notas |
+|---|---|---|---|
+| `NEKITA_TOKEN` | **sí** | — | Token de @BotFather. Nunca se registra en logs |
+| `NEKITA_MASTER_ID` | no | — | Id numérico del admin; no numérico → aviso y se ignora |
+| `NEKITA_TZ` | no | `Europe/Madrid` | Zona IANA válida |
+| `NEKITA_POLE_CORTE` | no | `22:59` | Hora local de cambio de jornada (`HH:MM`) |
+| `NEKITA_CACHE_SEGUNDOS` | no | `300` | TTL de los lotes de imágenes |
+| `NEKITA_DATA_DIR` | no | `~/.nekita/data` | BD, copias, overrides |
+| `NEKITA_HTTP_PORT` | no | `8080` | `/health` y `/ready` en 127.0.0.1 |
+| `NEKITA_LOG_LEVEL` | no | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
+| `NEKITA_LOG_MESSAGES` | no | `false` | Registrar el texto de los mensajes (solo con `DEBUG`) |
+| `NEKITA_BACKUP_HORA` | no | `04:00` | Hora local de la copia diaria |
+
+**Cambios respecto a Node:** se retiran `NEKITA_HORA_GUARDADO*` (ya no hay
+guardado diario) y `NEKITA_HORA_LIMPIEZA*` se unifica en `NEKITA_POLE_CORTE`
+(`22:59` equivale a los antiguos 22 / 59). Se documenta en el README.
+`.env.example` incluye **todas** las variables, **sin comentar**, con valores
+vacíos o seguros (🔎 en Node estaban comentadas y `cp .env.example .env` no
+daba una configuración usable).
+
+---
+## 9. Robustez y seguridad
+
+| Tema | Requisito |
+|---|---|
+| Secretos | El token solo en `.env`/`EnvironmentFile` con permisos `600`; `.env` en `.gitignore`; filtro de logs que enmascara cualquier cadena con forma de token (`\d+:[A-Za-z0-9_-]{30,}`). CI con escaneo de secretos (`gitleaks`) |
+| Admin | Solo por `user.id` de `NEKITA_MASTER_ID`, nunca por chat ni por nombre |
+| Entradas | Todo texto de usuario se trata como dato: SQL **siempre parametrizado**; nunca `f"...{texto}..."` en una consulta. Los nombres se envían **sin `parse_mode`** (o escapados) para que un alias con `<`/`*` no rompa ni inyecte formato |
+| SSRF | Las descargas de imagen solo admiten `https` y los **dominios de cada proveedor**; se rechazan IPs, `localhost` y redirecciones a otros dominios |
+| Recursos | Timeouts en toda llamada externa (10 s API, 15 s descarga); descarga en streaming con tope 10 MB; máx. 2 descargas simultáneas; caché de lotes acotada (nº de claves fijo) |
+| Límite de uso | 🆕 Limitador por usuario para comandos de imagen (p. ej. 1 cada 3 s por usuario y chat, en memoria). Evita gastar cuota de APIs externas |
+| Errores | Un fallo en un handler **nunca** tumba el bot: se registra con código corto y se responde `Algo ha fallado-nya (ref. …)` |
+| Apagado | Señales manejadas; exit 0 en parada limpia, ≠ 0 en fallo irrecuperable |
+| Telegram | Respeta `RetryAfter` (429): espera lo indicado y reintenta una vez; `Forbidden` (bot expulsado del grupo) se registra a nivel `INFO` y no es un error |
+| Dependencias | `uv.lock` versionado; `pip-audit` en CI y semanal; Dependabot o Renovate para `uv`/`github-actions` |
+
+## 10. Observabilidad
+
+- **Logs** a stdout en formato de texto legible (`journalctl` los recoge); con `NEKITA_LOG_LEVEL=DEBUG` se ven detalles. Cada línea de error con código de referencia.
+- Mismo nivel configurable para `aiogram`, `httpx` y `uvicorn`; `httpx` en `WARNING` salvo `DEBUG` (si no, imprime URLs con parámetros).
+- `journald` limita su tamaño (`SystemMaxUse=200M` recomendado) para proteger los 8 GB.
+- **Salud:** `/health` y `/ready` (5.3) + `systemd` `WatchdogSec` opcional (Fase 8).
+- **Sin métricas externas** por ahora: `/stats` cubre el uso funcional; RSS y CPU se miran con `systemctl status`/`journalctl`.
+
+---
+
+## 11. Estrategia de pruebas
+
+Objetivo: lo que une las piezas es donde aparecieron los bugs reales en Node
+(🔎 cobertura 62 % con la lógica pura al 90–100 % y el "pegamento" al 0 %).
+Aquí **el pegamento se prueba desde el principio**.
+
+| Nivel | Qué | Cómo |
+|---|---|---|
+| Unitario | `service.py` puro: normalización, jornada, caché, selección de posición, formateo | `pytest`, sin red ni BD |
+| Repo | SQL real | SQLite **en memoria** con las migraciones reales (no mocks) |
+| Integración (el más valioso) | Flujo completo Telegram→handler→respuesta | `Bot` real de aiogram con una **sesión falsa** (`BaseSession` propia) que registra cada método enviado; se alimenta con `dp.feed_update(bot, Update(...))` y una BD en memoria |
+| Tiempo | Jornadas, cambios de hora, medianoche, reinicio | Reloj inyectado (función `now()` en el servicio), **no** parches globales; suite con `TZ=UTC` y `TZ=Europe/Madrid` |
+| Concurrencia | 50 "oro" a la vez; orden "oro"→"plata" seguidos | `asyncio.gather` sobre el flujo de integración |
+| Arranque | Sin token → mensaje legible y `exit 1`; con token falso → intenta conectar y cierra limpio con SIGTERM | Subproceso real |
+| Contrato *live* | TheCatAPI, random.dog, generatorfun y Wikimedia devuelven URL de imagen válida | `pytest -m live`, **fuera** de la CI normal, job nocturno |
+
+**Flujos obligatorios del test de integración:** comando válido; comando de
+admin con y sin permiso; "oro/plata/bronce" en grupo y en privado; texto libre
+de nekomando; mensaje sin handler; error forzado en un comando (ref. en la
+respuesta); `/help` según rol; `/start@OtroBot` ignorado; menú `setMyCommands`
+sin los de admin; descarga plan B y plan C.
+
+**Reglas:** un test de regresión por cada bug conocido, **rojo antes del
+arreglo**; sin `sleep` real; sin red en tests normales (`pytest` falla si
+alguien abre un socket); `filterwarnings=error`. **Umbral de cobertura:**
+≥ 85 % global y ≥ 95 % en `pole/` y `core/timeutil.py` (⚠️ cifras propuestas,
+se ajustan tras la Fase 3).
+
+## 12. Despliegue (Debian + systemd)
+
+- Usuario de sistema `nekita` sin shell; código y venv en `/opt/nekita`; datos en `/var/lib/nekita` (`NEKITA_DATA_DIR`); `.env` en `/etc/nekita/nekita.env` (`600`, dueño `nekita`).
+- Instalación: `uv sync --frozen --no-dev` (⚠️ si `uv` no está disponible en el servidor: `python3 -m venv` + `pip install` de un `requirements.txt` exportado con `uv export`).
+- Unidad `nekita.service` con `Restart=on-failure`, `RestartSec=5`, `MemoryMax=400M`, `NoNewPrivileges=true`, `ProtectSystem=strict`, `ReadWritePaths=/var/lib/nekita`, `PrivateTmp=true`, `ProtectHome=true`.
+- `nekita-backup.timer` solo si se prefiere desacoplar la copia del proceso; por defecto la hace el scheduler interno (7.7).
+- **Actualizar:** `git pull` → `uv sync --frozen --no-dev` → `systemctl restart nekita` (las migraciones corren solas al arrancar y son **hacia delante**; antes de migrar se hace copia automática).
+- **Docker** (opcional): `python:3.13-slim`, usuario no root, `HEALTHCHECK` contra `/health`, `mem_limit`, volumen de datos. Se escribe solo si lo pides (decisión 16).
+- **Retirar la versión Node:** parar el servicio/contenedor anterior **antes** de arrancar este (un mismo token no admite dos `getUpdates`: error 409).
+
+---
+## 13. Fases de implementación
+
+Cada fase termina con **algo que funciona y se puede probar**, y deja la rama
+en verde (`ruff`, `mypy --strict`, `pytest`). Cada una tiene **Entregables**,
+**Hecho cuando** (criterios medibles) y **Riesgos**. No se empieza una fase con
+la anterior en rojo.
+
+| Fase | Nombre | Resultado visible | Depende de |
+|---|---|---|---|
+| 0 | Cimientos | Proyecto, calidad y CI en verde; `/health` responde | — |
+| 1 | Núcleo de datos | BD + migraciones + copias + importador de Node | 0 |
+| 2 | Núcleo del bot | Bot arranca, polling, errores, admin; `/help` y menú automáticos | 0, 1 |
+| 3 | Funciones sencillas | `/start /hola /hora /dia /id /health /stats` + feature de juguete | 2 |
+| 4 | Nekomandos | Frases libres con overrides | 2 |
+| 5 | Pole | Pole completa, atómica y sin cron | 1, 2 |
+| 6 | Imágenes | `/neko /perro /cangrejo /moneda` con caché y plan B | 2 |
+| 7 | Operación | systemd, copias, restauración, medición, prueba real | 1–6 |
+| 8 | Extras (opcional) | Webhook, panel, IA, recordatorios… | 7 |
+
+### Fase 0 — Cimientos
+
+**Entregables**
+- [ ] Rama `python` con `pyproject.toml` (sección 3), `uv.lock`, `.gitignore`, `LICENSE`, `README` mínimo y `.env.example` completo.
+- [ ] Estructura de carpetas (5.1) con `__init__.py`; `__main__.py` y `app.py` con `lifespan` vacío.
+- [ ] `config.py` con validación y mensaje legible si falta `NEKITA_TOKEN` (`exit 1`).
+- [ ] `/health` y `/ready` (stub) en FastAPI, solo en `127.0.0.1`.
+- [ ] Logging configurable (`NEKITA_LOG_LEVEL`) con enmascarado de token.
+- [ ] CI (GitHub Actions): `ruff check`, `ruff format --check`, `mypy`, `pytest --cov`, `pip-audit`, `gitleaks`; solo Python 3.13.
+- [ ] Test de la regla de dependencias (`core` no importa `features`; una feature no importa otra).
+- [ ] ADR corto `DOCS/ADR/0001`: por qué aiogram + FastAPI + SQLite + systemd.
+
+**Hecho cuando:** `uv run pytest`, `ruff` y `mypy --strict` pasan en limpio; arrancar sin token da un mensaje claro y código 1; con un token cualquiera arranca FastAPI y `curl 127.0.0.1:8080/health` da 200; se comprobó que `aiosqlite` instala y funciona con 3.13.
+
+**Riesgos:** `mypy --strict` con aiogram puede pedir ajustes (`# type: ignore` justificados); SQLite del servidor sin `STRICT` (sección 2).
+
+### Fase 1 — Núcleo de datos
+
+**Entregables**
+- [ ] `core/db.py`: apertura, PRAGMAs (7.1), transacciones y **ejecutor de migraciones** (`user_version`; cada fichero en una transacción; fallo → aborta el arranque).
+- [ ] `migrations/0001_inicial.sql` (7.2).
+- [ ] Copia automática **antes** de migrar si ya hay datos.
+- [ ] `core/backup.py`: `VACUUM INTO` + retención (7.7) y su test.
+- [ ] Importador de Node (7.6) con tests v1, v2, mezclado, vacío y corrupto.
+- [ ] Contadores de estadísticas en memoria con volcado periódico (7.4).
+
+**Hecho cuando:** los tests de repo pasan con SQLite en memoria; abrir una BD de versión superior a la conocida **falla con mensaje claro** sin tocarla; importar datos de ejemplo deja los mismos puntos por usuario; matar el proceso a mitad de una escritura deja `integrity_check` en `ok`.
+
+**Riesgos:** corrupción por copiar el fichero con WAL activo (mitigado: solo `VACUUM INTO`); formato real de producción distinto al documentado (importador tolerante; se revisa el fichero real antes de la Fase 7).
+
+### Fase 2 — Núcleo del bot
+
+**Entregables**
+- [ ] `core/feature.py` (contrato 6.1) y `features/__init__.py` con la lista explícita.
+- [ ] `core/bot.py`: `Bot`, `Dispatcher`, registro de features, `getMe` + aviso de *Group Privacy*, `setMyCommands` (sin admin).
+- [ ] Middlewares: usuario/`is_admin`, **serialización por chat**, estadísticas (solo éxito), errores con referencia, filtro `@OtroBot`, limitador de uso.
+- [ ] Guard `admin_only` con el mensaje literal del Apéndice A.
+- [ ] Vigilancia del polling: caída irrecuperable → `exit` ≠ 0; `/ready` refleja el latido.
+- [ ] Parada limpia (5.2).
+- [ ] **Sesión falsa de Telegram** y fixtures de integración (sección 11): hace seguras las fases siguientes.
+
+**Hecho cuando:** test de integración con un comando de juguete: responde, cuenta estadística, falla con `ref. xxxxxx` sin caer, el admin pasa y el no admin recibe el rechazo, `/comando@OtroBot` se ignora; test de arranque real con token falso (conecta, falla legible, `exit` ≠ 0; con SIGTERM cierra en < 5 s).
+
+**Riesgos:** updates concurrentes (mitigado con la serialización por chat y un test de orden); cambios entre versiones menores de aiogram (se fija `<4` y se usa el lock).
+
+### Fase 3 — Funciones sencillas
+
+**Entregables**
+- [ ] `features/start` (`/start`, `/hola`, `/help` generado), `features/info` (`/hora`, `/dia`, `/id`), `features/meta` (`/health`, `/stats` con comandos y poles separados).
+- [ ] `core/timeutil.py`: formatos y zonas, con tests en `TZ=UTC` y `Europe/Madrid`.
+- [ ] Descripciones del menú copiadas de `node-final` (aviso en 4.1).
+- [ ] Test de la **receta 6.3**: una feature de juguete aparece sola en `/help`, el menú y `/stats`.
+
+**Hecho cuando:** todos los textos coinciden con el Apéndice A (test con los literales); `/help` no muestra `/stats` a un no admin; `/dia` entre las 00:00 y las 02:00 de España da el día correcto.
+
+---
+### Fase 4 — Nekomandos
+
+**Entregables**
+- [ ] `features/nekomando` con los datos del Apéndice B, normalización única (4.5) y token `{hora:<zona>}`.
+- [ ] Carga de overrides (tabla + importación del `nekomandos.json` de Node) con validación y avisos.
+- [ ] `/help` incluye el párrafo de frases libres **generado** desde los datos 🆕 (en Node estaba copiado a mano y se desfasaba).
+
+**Hecho cuando:** tests de normalización (acentos, mayúsculas, espacios), zona inválida (no rompe), override inválido (se rechaza con aviso y el bot arranca) y **orden pole → nekomando** (una frase que sea pole no llega a nekomando).
+
+### Fase 5 — Pole
+
+**Entregables**
+- [ ] `core/timeutil.py`: cálculo de **jornada** (4.3) con reloj inyectado.
+- [ ] `features/pole`: repo SQL (7.3), servicio, router (solo grupos), `/pole`, mensajes literales.
+- [ ] Reclamación de puntos legado por nombre.
+- [ ] Estadísticas `pole:*` en la misma transacción que la victoria.
+
+**Hecho cuando:** pasan los cuatro tests de aceptación de 7.3; "plata" antes que "oro" no cuenta; una persona no gana dos posiciones el mismo día; en privado se ignora; el ranking limita a 20 y cabe en 4096 caracteres; cambiar de alias no cambia los puntos.
+
+**Riesgos:** la jornada en los dos domingos de cambio de hora; nombres con caracteres especiales (se envía sin `parse_mode`).
+
+### Fase 6 — Imágenes
+
+**Entregables**
+- [ ] `core/http.py`: cliente único, timeouts y **descarga segura** (https, dominios permitidos, streaming, tope, semáforo de 2).
+- [ ] Proveedores `cat`, `dog`, `cangrejo`, `moneda` tras una interfaz común (`get_urls() -> list[str]`).
+- [ ] Caché de lotes con una URL distinta por petición y relleno con `Lock` por clave (4.4).
+- [ ] Envío por extensión, plan B y plan C, con los mensajes del Apéndice A.
+- [ ] Tests con `httpx.MockTransport` (sin red) y `tests/live/` con `-m live`.
+
+**Hecho cuando:** 5 `/neko` seguidos dan 5 URLs distintas con 1 sola llamada a la API; 20 peticiones simultáneas con caché vacía hacen **1** llamada; una URL `http://` o de dominio no permitido se rechaza; una descarga de 20 MB se corta en 10 MB; foto rechazada → documento; gif/mp4 usan el método correcto; el job `live` pasa contra las 4 fuentes (⚠️ puede fallar por cambios de terceros: no bloquea la CI normal).
+
+**Riesgos:** fuentes externas que cambian o caen (random.dog y generatorfun no tienen contrato); límites de Telegram (verificar, 4.4).
+
+### Fase 7 — Operación y puesta en marcha
+
+**Entregables**
+- [ ] `deploy/nekita.service`, `install.sh` (usuario, carpetas, permisos), tope de `journald` y swap opcional.
+- [ ] **Medición real** de RAM/CPU/disco contra el presupuesto de la sección 2, anotada en un ADR.
+- [ ] Copia y **restauración probada** (7.7) y procedimiento de actualización.
+- [ ] README completo: instalación, *Group Privacy*, variables, equivalencias con Node, problemas frecuentes.
+- [ ] Prueba manual con **token real** en un grupo de prueba: todos los comandos, pole completa, reinicio a mitad de jornada, `kill -9` y arranque. ⚠️ Nada de esto se ha probado nunca contra Telegram real.
+- [ ] Importar los datos reales de producción (tras revisar el fichero) y retirar el servicio Node.
+- [ ] `CHANGELOG.md` y etiqueta `v2.0.0`.
+
+**Hecho cuando:** RSS en reposo y pico dentro del presupuesto (o ADR que justifica la desviación); `kill -9` seguido de arranque conserva todos los puntos; restaurar una copia funciona; `systemctl restart` tarda < 10 s; no hay mensajes duplicados.
+
+### Fase 8 — Extras (opcional; cada uno requiere decisión)
+
+Webhook, panel admin, comando de admin para editar nekomandos, `WatchdogSec`,
+IA, recordatorios, límite de uso persistente, métricas. Cada uno empieza con un
+ADR corto (qué, coste en RAM, riesgo) y se construye **como una feature** (6.1).
+
+---
+
+## 14. Riesgos globales
+
+| Riesgo | Prob. | Impacto | Mitigación |
+|---|---|---|---|
+| Nada probado aún contra Telegram real (el `.env` local solo tiene placeholders) | Alta | Alto | Fase 7 con token real y grupo de prueba; test de integración con sesión falsa desde la Fase 2 |
+| RAM > 1 GB con picos de descarga | Baja | Alto | Streaming + tope + semáforo + `MemoryMax` |
+| Fuentes de imágenes cambian o caen | Media | Bajo | Plan B, mensajes de "no veo…", tests `live` nocturnos |
+| Pérdida de datos por mala restauración | Baja | Alto | `VACUUM INTO`, restauración **probada**, copias semanales |
+| Dos instancias con el mismo token (409) | Media | Medio | Parar Node antes; salida ≠ 0 y aviso claro |
+| Alcance creciente (IA, panel…) | Media | Medio | Fase 8 fuera del camino crítico; ADR por extra |
+| Cambios de API de aiogram | Baja | Medio | `<4`, `uv.lock`, tests de integración |
+| aiogram/FastAPI no encajan con 1 GB | Muy baja | Medio | Medición en Fase 7; alternativa: sin FastAPI (solo `aiohttp` mínimo) |
+
+## 15. Fuera de alcance (explícito)
+
+IA/LLM, panel web, varios idiomas, webhook, métricas Prometheus, varias
+instancias o alta disponibilidad, ORM, Redis/colas, y migrar a PostgreSQL.
+Entran solo a través de la Fase 8.
+
+## 16. Decisiones pendientes de confirmar
+
+Se aplicó la opción marcada ✔ por defecto. **Cambiarlas es barato ahora, caro después de la Fase 2.**
+
+| # | Decisión | Opciones | Aplicada |
+|---|---|---|---|
+| 1 | Cliente de Telegram | **aiogram** · python-telegram-bot | ✔ aiogram |
+| 2 | Recepción | **polling** · webhook | ✔ polling |
+| 3 | Despliegue | **systemd** · Docker | ✔ systemd (Docker opcional) |
+| 4 | Corte de la jornada de pole | **22:59** · 00:00 | ✔ 22:59 (mantiene el comportamiento actual) |
+| 5 | Pole sin cron (jornada calculada) | **sí** · mantener cron | ✔ sí |
+| 6 | Importar datos de Node | **sí, una vez** · empezar de cero | ✔ sí |
+| 7 | Límite de uso en comandos de imagen | **sí (1 cada 3 s)** · no | ✔ sí |
+| 8 | Nombre del fichero BD y ubicación | **`~/.nekita/data/nekita.db`** · `/var/lib/nekita` | ✔ `NEKITA_DATA_DIR` configurable |
+| 9 | Licencia | **GPL-3.0** | ✔ sin cambios |
+
+---
+## Apéndice A — Textos literales (contrato)
+
+Copiados del código Node ✅. Los tests de las fases 3–6 comparan contra estos literales.
+
+| Dónde | Texto |
+|---|---|
+| `/start` | `Puedo hacer muchas cosas por tu grupo. Soy una sustituta definitiva para que podáis hacer poles, enviar nekos a tu amigo favorito y mucho más. Pregúntame qué puedo hacer con /help` |
+| `/hola` | `Hola, <@usuario o nombre>-nya.` |
+| `/hora` | `Son las: HH:MM:SS` |
+| `/dia` | `Hoy es: DD-MM-YYYY` |
+| `/id` | `El ID de este grupo es: <chat_id>` |
+| `/health` | `🐱 Nekita está viva! v<versión>` |
+| `/help` (cabecera) | `Mis comandos son los siguientes-nya:` + línea en blanco |
+| `/help` (por categoría, orden alfabético) | `📋 <categoría>:` y, indentado con 2 espacios, `/<comando> — <descripción>` (ordenados) |
+| `/help` (pie) | `¡Y muchos otros comandos más directamente escritos! Como por ejemplo:` + una línea por grupo de frases (ver Apéndice B; 🆕 generado desde los datos) |
+| `/pole` sin datos | `Aún no hay puntuaciones registradas-nya. ¡Empieza a participar escribiendo oro, plata o bronce!` |
+| `/pole` vacío | `No hay puntuaciones de pole aún-nya. ¡Sé el primero!` |
+| `/pole` cabecera | `Puntuaciones de pole-nya!` + línea en blanco; cada fila `<🥇/🥈/🥉/#N> <nombre>: <N> pts` |
+| Pole ganada | `¡Enhorabuena <nombre>! Has ganado la pole-nya` (`la plata-nya`, `el bronce-nya`) |
+| `/stats` | `📊 Estadísticas de Nekita v<versión>-nya!` · `Grupos activos: N` · 🆕 `Comandos usados: N` · 🆕 `Poles concedidas: N` · `Comandos más usados:` + `  • <cmd>: <N>` |
+| Sin permiso | `Este comando es solo para el administrador-nya.` |
+| Error en comando | `Algo ha fallado-nya (ref. <6 hex>)` |
+| `/neko` sin imagen | `Todos los nekos están escondidos-nya` |
+| `/perro` sin imagen | `Ahora mismo no veo ningún perrito-nya` |
+| `/cangrejo` sin imagen | `Ahora mismo no veo ningún cangrejito-nya` |
+| `/moneda` sin imagen | `Ahora mismo no veo ninguna monedita-nya` |
+| `/neko` error | `Error obteniendo imagen de gato-nya` |
+| `/perro` error | `Error obteniendo imagen de perro-nya` |
+| `/cangrejo` error | `Error obteniendo imagen de cangrejo-nya` |
+| `/moneda` error | `Error obteniendo imagen de moneda-nya` |
+
+Descripciones del menú de Telegram ✅: `start` Mensaje de bienvenida · `hola` Saluda al usuario · `help` Lista de comandos disponibles · `hora` Hora actual en España · `dia` Fecha actual · `id` ID del chat actual · `neko` Imagen aleatoria de un gato · `perro` Imagen aleatoria de un perro · `cangrejo` Imagen aleatoria de un cangrejo · `moneda` Imagen aleatoria de una moneda · `pole` Leaderboard de pole del grupo · `health` Comprueba que el bot está vivo · `stats` Estadísticas del bot (solo admin, **no se publica**).
+
+> ⚠️ Los textos de las líneas "Comandos usados" y "Poles concedidas" de `/stats` son **nuevos** (🆕), no existían en Node. El resto son literales.
+
+---
+
+## Apéndice B — Nekomandos por defecto (contrato)
+
+Claves ya normalizadas ✅ (`nekomandos.data.ts`). Sustituciones `{hora:<zona>}` en el momento de responder.
+
+| Frase | Respuesta |
+|---|---|
+| `hora china` | `En China son las: {hora:Asia/Shanghai}` |
+| `hora` | `En España (península) son las: {hora:Europe/Madrid}` |
+| `hora canaria` | `En Canarias son las: {hora:Atlantic/Canary}` |
+| `hora rusa` | `En Rusia (Moscú) son las: {hora:Europe/Moscow}` |
+| `hora venezuela` | `Sin comida no hay hora.` |
+| `pole canaria` | `A las 12:00 de canarias` |
+| `pole peninsular` | `A las 11:00 de canarias` |
+| `pole andaluza` | `Hazla cuando quieras, pero a las 06:00 península está bien-nya.` |
+| `pole palitos` | `A las 11:11, tú puedes-nya!` |
+| `pole patitos` · `pole cuack` · `pole patitos canarias` · `pole cuack canarias` | `A las 22:22, tú puedes-nya!` |
+| `dobby` | `Dobby no tiene amo Dobby es un elfo libre` |
+| `:)` | `:)` |
+| `:(` | `Sonríe, eres especial-nya!!` |
+| `:3` | `¯\_(=^･ω･^)_/¯` |
+| `plc` | `Eso te lo hago yo con un Arduino de 3 euros.` |
+| `buenos dias` | `Buenos días para ti también.` |
+| `buenas tardes` | `Buenas tardes, ¿ya has comido-nya?` |
+| `buenas noches` | `Buenas noches, que duermas bien-NYA!!` |
+| `buenas` · `hola` | `Hola, ¿qué tal?` |
+
+**Párrafo de `/help` en Node** (se genera en la versión nueva, 🆕; ejemplo de salida esperada): `Hora china, Hora, Hora canaria, Hora rusa, Hora venezuela` / `Pole canaria, Pole peninsular, Pole andaluza, Pole palitos, Pole patitos` / `Pole cuack, Dobby, PLC` / `:), :(, :3` / `Buenos días, Buenas tardes, Buenas noches, Buenas, Hola`. Para poder generarlo, cada frase del fichero de datos lleva un campo opcional `grupo` y `etiqueta` (cómo se muestra, p. ej. "Buenos días").
+
+---
+
+## Apéndice C — Origen de esta especificación
+
+| Qué | De dónde |
+|---|---|
+| Comportamiento y textos | Rama `node-final` (commit `bb3ecc8`), leído del código |
+| Fallos conocidos y su causa | `DOCS/PLAN-ENDURECIMIENTO.md` de la versión Node (solo en `node-final`) |
+| Formato de datos a importar | `chat-state.manager.ts` y `persistence.service.ts` de `node-final` |
+| Versiones de librerías | Resolución real con `uv` en Python 3.13.16 el 18-10-2026 |
+| Historial de Python antiguo | Rama `backup/python-legacy` (solo referencia; no se reutiliza código) |
+
+Para consultar cualquier fichero de la versión anterior:
+`git show node-final:<ruta>` (p. ej. `git show node-final:src/modules/pole/pole.service.ts`).

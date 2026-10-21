@@ -125,7 +125,7 @@ exactos están en el Apéndice A.
 | `/perro` | images | Imagen aleatoria de un perro | Ver 4.4 |
 | `/cangrejo` | images | Imagen aleatoria de un cangrejo | Ver 4.4 |
 | `/moneda` | images | Imagen aleatoria de una moneda | Ver 4.4 |
-| `/pole` | pole | Leaderboard de pole del grupo | Ver 4.3 |
+| `/pole` | pole | Leaderboard de pole del grupo | Top 10 de la pole principal (4.3). 🆕 Cada pole de `games.toml` añade **su propio comando** (`/pole_canaria`, `/pole_patitos`…), con descripción `Leaderboard de <title> del grupo` |
 | `/health` | meta | Comprueba que el bot está vivo | `🐱 Nekita está viva! v<versión>` |
 | `/stats` | meta | Estadísticas del bot (solo admin) | Ver 4.6 |
 
@@ -142,38 +142,90 @@ Reglas comunes:
 ### 4.2 Texto libre (sin `/`)
 
 Se evalúa en este orden y **el primero que responde consume el mensaje**:
-1. **Pole** (`oro`, `plata`, `bronce`): solo en grupos (4.3).
+1. **Poles** (las palabras de `games.toml`: `oro`, `plata`, `bronce`, `pole canaria`…): solo en grupos (4.3).
 2. **Nekomandos**: tabla frase → respuesta (4.5, Apéndice B).
 
 Lo que no es texto (fotos, ediciones, altas de miembros) no se toca.
 
-### 4.3 Pole
+### 4.3 Poles
 
-Reglas 🔎 (sin cambios de comportamiento):
+Una **pole** es un juego independiente **definido por datos**, no por código:
+`features/pole/games.toml`. Cada grupo lleva su propia puntuación de cada pole;
+añadir una pole nueva es añadir un bloque al fichero (y reiniciar).
+
+| Campo | Significado | Ejemplo |
+|---|---|---|
+| `id` | Identificador estable (es la clave en la BD; no se cambia) | `canaria` |
+| `title` | Nombre que se muestra | `pole canaria` |
+| `command` | Comando que muestra su ranking (`[a-z0-9_]`, ≤ 32) | `pole_canaria` |
+| `tz` | Zona IANA: define **cuándo empieza el día** de esa pole | `Atlantic/Canary` |
+| `window` | *Opcional.* Franja local `[from, to)` en la que se puede ganar. Sin ella, **todo el día** | `22:22`–`22:23` |
+| `positions` | Lista **ordenada** de puestos; cada uno con `prize`, `points` y `words` (una o varias palabras) | oro → 3 pts |
+
+**Poles de partida** (las tres que has definido):
+
+| `id` | Comando | Zona | Franja | Puestos (palabras → puntos) |
+|---|---|---|---|---|
+| `pole` | `/pole` | `Europe/Madrid` | todo el día | 🥇 `oro` o `pole` → 3 · 🥈 `plata` → 2 · 🥉 `bronce` → 1 |
+| `canaria` | `/pole_canaria` | `Atlantic/Canary` | todo el día | único puesto: `pole canaria` → ⚠️ puntos por decidir |
+| `patitos` | `/pole_patitos` | `Europe/Madrid` | 22:22–22:23 | único puesto: `pole patitos` → ⚠️ puntos por decidir |
+
+⚠️ Palabras alternativas de plata y bronce, y los puntos de `canaria` y `patitos`: no los has indicado; la spec propone 3 puntos al puesto único, como el oro de Node.
+
+**Reglas**
 - Solo en **grupos y supergrupos**. En privado, canales o mensajes sin usuario (admin anónimo) se **ignora**.
-- El mensaje, tras `strip()` y minúsculas, debe ser **exactamente** `oro`, `plata` o `bronce`.
-- Se gana por orden: oro (**3 pts**) → plata (**2**) → bronce (**1**). Solo se puede ganar la posición que toca.
-- **Una persona solo gana una posición por jornada.**
-- Al ganar: `¡Enhorabuena <nombre>! Has ganado la pole-nya` / `la plata-nya` / `el bronce-nya` (oro = "la pole"). `<nombre>` es `username` **sin `@`** o, si no hay, `first_name`.
-- Los puntos pertenecen al **usuario (id de Telegram)**, no al nombre; el ranking muestra el nombre actual.
-- `/pole` muestra el ranking del grupo (🥇 🥈 🥉, luego `#4`, `#5`…).
-- Los puntos antiguos guardados **por nombre** (Node v1) se conservan aparte (`legacy`) y se asignan al usuario cuando puntúa con ese nombre; mientras tanto se muestran por su nombre.
+- El mensaje debe ser **exactamente** una de las palabras (no "contiene"), con la normalización de 4.5: minúsculas, sin acentos, espacios colapsados.
+- **El día** de una pole es la fecha local en **su** zona y empieza a las **00:00** locales. `pole` cambia a las 00:00 de Madrid y `canaria` a las 00:00 de Canarias (01:00 de Madrid).
+- Se gana **por orden** y solo el puesto que toca; la palabra de un puesto posterior no cuenta. Un juego con un único puesto se acaba con la primera victoria del día.
+- Con `window`, solo cuenta si la hora local del mensaje está dentro de la franja. Sin ella se puede ganar **durante todo el día, hasta que se agoten los puestos de ese día**.
+- Una persona gana **como mucho un puesto por día y por pole**; sí puede ganar a la vez en poles distintas.
+- Cada puesto da sus puntos. La puntuación de una pole es **una sola, acumulada de todos los días**; los puntos se guardan en cada victoria, así que cambiar los puntos en el fichero no reescribe el pasado.
+- Las palabras son **únicas entre todas las poles**: si dos poles comparten una, el bot **no arranca** y dice cuál (4.3.1).
+- Al ganar: `¡Enhorabuena <nombre>! Has ganado <prize>-nya` (`la pole`, `la plata`, `el bronce`…). `<nombre>` es `username` **sin `@`** o, si no hay, `first_name`.
+- Si el mensaje **no concede nada** (fuera de franja, puesto ya ganado, ya ganaste hoy), sigue hacia los nekomandos, como en Node. Así `pole patitos` a las 22:30 responde `A las 22:22, tú puedes-nya!`.
+- **Ranking de cada pole:** su propio comando (`/pole`, `/pole_canaria`…), **top 10** de ese grupo, 🥇 🥈 🥉 y luego `#4`…`#10`. Los comandos salen **solos** en `/help` y en el menú de Telegram.
+- Los puntos son del **usuario (id de Telegram)**, no del nombre; el ranking muestra el nombre actual.
+- Los puntos de Node (por nombre) se importan a la pole `pole` (7.6) y se asignan al usuario cuando puntúa con ese nombre.
 
-**La "jornada de pole"** cambia a las `22:59` hora `NEKITA_TZ` (configurable; mismo valor por defecto que antes).
+> 🆕 **Sin cron.** El día y la franja se **calculan** con `message.date` (el instante
+> en que se envió, no cuando el bot lo procesa), así que todo es correcto aunque
+> el bot haya estado parado o se reinicie. Se comparan campos de fecha/hora
+> locales, nunca se suman milisegundos.
 
-> 🆕 **Ya no hay cron de "reset".** La jornada se **calcula** a partir de la
-> fecha del propio mensaje (`message.date`), así que es correcta aunque el bot
-> haya estado parado o se reinicie. Elimina de raíz los dos fallos de Node:
-> ganadores de ayer tras un fallo, y reset perdido si el bot está caído a las 22:59.
+**Comprobado ✅** (Python 3.14 de esta máquina, `zoneinfo`):
 
-Regla: se toma la hora local del mensaje en `NEKITA_TZ`; si `hora:minuto` local
-es **≥ corte**, la jornada es **el día siguiente**; si no, hoy. Se comparan
-**campos** de fecha/hora (no se suman milisegundos), para que los cambios de
-hora de marzo y octubre no la desplacen.
+| Instante (hora de Madrid) | Día de `pole` | Día de `canaria` |
+|---|---|---|
+| 21-oct 23:30 | 21-oct | 21-oct |
+| 22-oct 00:00:01 | 22-oct | **21-oct** |
+| 22-oct 00:30 | 22-oct | **21-oct** |
+| 22-oct 01:00:01 | 22-oct | 22-oct |
 
-🆕 El ranking muestra como máximo **20** entradas (límite de 4096 caracteres
-de Telegram) y la concesión es **atómica en SQL** (7.3): dos "oro" simultáneos
-nunca dan dos oros.
+Franja `22:22`–`22:23` (semiabierta): `22:21:59` no · `22:22:00` sí · `22:22:59` sí · `22:23:00` no. Probadas seis fechas alrededor de los dos cambios de hora de 2026 (28-29-30 de marzo y 24-25-26 de octubre, en Madrid): las 22:22 locales siguen dentro de la franja, y las 00:00 locales de los dos domingos de cambio existen y no son ambiguas. ⚠️ Canarias cambia a la vez que la península pero no se ha probado su zona por separado; es parte del test (h) de 7.3.
+
+**Límites conocidos**
+- Una `window` no puede cruzar la medianoche (se rechaza al cargar).
+- Cambiar `games.toml` requiere reiniciar el bot.
+- Si se quita una pole del fichero, sus datos siguen en la BD pero dejan de mostrarse.
+- `message.date` tiene resolución de segundos: dos mensajes del mismo segundo se ordenan por el orden de proceso (determinista gracias a la serialización por chat).
+
+#### 4.3.1 Validación al arrancar (error legible y `exit 1`)
+
+`id` y `command` únicos y válidos (`[a-z0-9_]+`, el comando no puede chocar con otro de cualquier feature); `tz` IANA válida; `window` con `from < to`; al menos un puesto; `points` enteros ≥ 0; ninguna palabra vacía; **ninguna palabra repetida entre poles**.
+
+#### 4.3.2 Poles por definir
+
+En los nekomandos actuales (Apéndice B) hay frases que sugieren más poles. **No están definidas**, así que siguen siendo solo texto hasta que me indiques su regla:
+
+| Frase actual | Texto que responde hoy | Pregunta |
+|---|---|---|
+| `pole canaria` | "A las 12:00 de canarias" | Coherente con tu 00:00 Canarias si "12:00" es 12 a. m. ⚠️ (interpretación mía) |
+| `pole peninsular` | "A las 11:00 de canarias" | 11 p. m. en Canarias = 00:00 de Madrid ⚠️. ¿Es la pole normal o un alias de `oro`? |
+| `pole andaluza` | "a las 06:00 península está bien" | ¿Es una pole real? ¿Franja? |
+| `pole palitos` | "A las 11:11" | ¿Franja y zona? ¿11:11 o 23:11? |
+| `pole cuack`, `pole patitos canarias`, `pole cuack canarias` | "A las 22:22" | ¿`cuack` es otra palabra de `patitos`? ¿Las "canarias" son una pole aparte a las 22:22 de Canarias? |
+
+---
 
 ### 4.4 Imágenes
 
@@ -244,13 +296,13 @@ nekita/
 │   │   ├── db.py             conexión SQLite, PRAGMAs, transacciones, migraciones
 │   │   ├── scheduler.py      tareas periódicas (asyncio + zoneinfo)
 │   │   ├── http.py           AsyncClient compartido + descarga segura
-│   │   ├── timeutil.py       jornada, formatos, zonas
+│   │   ├── timeutil.py       día local por zona, franjas, formatos
 │   │   └── texts.py          normalización de texto, formateo de nombres
 │   └── features/
 │       ├── start/   (start, hola, help)
 │       ├── info/    (hora, dia, id)
 │       ├── images/  (neko, perro, cangrejo, moneda) + providers/ + cache
-│       ├── pole/    (service, repo, router, ranking)
+│       ├── pole/    (service, repo, router, ranking, games.py, games.toml)
 │       ├── nekomando/ (service, router, data/nekomandos.json)
 │       └── meta/    (health, stats)
 └── tests/
@@ -313,6 +365,12 @@ El núcleo **descubre** todas las carpetas de `features/` (lista explícita en
 entiende). Con eso, `/help`, el menú de Telegram, las estadísticas y el control
 de admin funcionan **sin tocar nada más**.
 
+**Comandos generados desde datos:** `commands` es una lista que se construye al
+crear la feature, así que una feature puede leer su fichero de datos antes y
+generar un `CommandInfo` por entrada. Lo usa `pole` (un comando por pole de
+`games.toml`, 4.3). El router recibe esos comandos con un filtro construido
+igual. Se valida con un test en la Fase 2 (la receta 6.3 no depende de esto).
+
 ### 6.2 Metadatos de comando (🔎 equivalente a `@Command()` de Node)
 
 `name`, `description`, `category`, `admin_only`. Se guardan como `flags` del
@@ -367,31 +425,36 @@ CREATE TABLE users (            -- el nombre visible es solo para mostrar
   updated_at  TEXT NOT NULL
 ) STRICT;
 
-CREATE TABLE pole_wins (        -- una fila por posición ganada: fuente de verdad
+CREATE TABLE pole_wins (        -- una fila por puesto ganado: fuente de verdad
   chat_id   INTEGER NOT NULL REFERENCES chats(chat_id),
-  day_key   TEXT    NOT NULL,   -- 'YYYY-MM-DD' de la jornada
-  position  INTEGER NOT NULL CHECK (position IN (0,1,2)),
+  game_id   TEXT    NOT NULL,   -- 'pole', 'canaria', 'patitos' (id de games.toml)
+  day_key   TEXT    NOT NULL,   -- 'YYYY-MM-DD' local en la zona de ese juego
+  position  INTEGER NOT NULL CHECK (position >= 0),
   user_id   INTEGER NOT NULL REFERENCES users(user_id),
+  points    INTEGER NOT NULL CHECK (points >= 0),   -- los de ese momento
   won_at    TEXT    NOT NULL,   -- instante UTC del mensaje
-  PRIMARY KEY (chat_id, day_key, position),
-  UNIQUE      (chat_id, day_key, user_id)
+  PRIMARY KEY (chat_id, game_id, day_key, position),
+  UNIQUE      (chat_id, game_id, day_key, user_id)
 ) STRICT;
+CREATE INDEX ix_pole_wins_ranking ON pole_wins (chat_id, game_id, user_id);
 
 CREATE TABLE pole_legacy (      -- puntos de Node v1 (por nombre) sin reclamar
   chat_id  INTEGER NOT NULL REFERENCES chats(chat_id),
+  game_id  TEXT    NOT NULL,
   name     TEXT    NOT NULL,
   points   INTEGER NOT NULL CHECK (points >= 0),
-  PRIMARY KEY (chat_id, name)
+  PRIMARY KEY (chat_id, game_id, name)
 ) STRICT;
 
 CREATE TABLE pole_adjust (      -- puntos importados o reclamados del legado
   chat_id  INTEGER NOT NULL REFERENCES chats(chat_id),
+  game_id  TEXT    NOT NULL,
   user_id  INTEGER NOT NULL REFERENCES users(user_id),
   points   INTEGER NOT NULL,
-  PRIMARY KEY (chat_id, user_id)
+  PRIMARY KEY (chat_id, game_id, user_id)
 ) STRICT;
 
-CREATE TABLE stats (            -- 'cmd:neko', 'pole:oro'
+CREATE TABLE stats (            -- solo contadores de comandos: 'cmd:neko'
   key    TEXT PRIMARY KEY,
   count  INTEGER NOT NULL DEFAULT 0
 ) STRICT;
@@ -402,36 +465,44 @@ CREATE TABLE nekomando_overrides (   -- editables en caliente (opcional, Fase 4)
 ) STRICT;
 ```
 
-Desaparece el estado en memoria `winners`/`nextPosition`: se **deriva** de
-`pole_wins` de la jornada actual.
+Desaparece el estado en memoria `winners`/`nextPosition`: se **deriva** de las filas de `pole_wins` del día. La definición de las poles (`games.toml`) se carga **una vez** al arrancar y se indexa en un diccionario `palabra normalizada → (pole, puesto)`.
 
-### 7.3 Pole en SQL (atómica y sin cron)
+### 7.3 Poles en SQL (atómicas y sin cron)
 
-Para un mensaje `oro|plata|bronce` de `user_id` en `chat_id`, en **una transacción**:
+Para un mensaje de grupo con `user_id` y `chat_id`:
 
-1. `day_key` = jornada de `message.date` (4.3).
-2. `n` = nº de filas de `pole_wins` de `(chat_id, day_key)`; la posición que toca es `n` (si `n ≥ 3`, no hay nada que ganar).
-3. Si la palabra no corresponde a la posición `n` → no hace nada.
-4. `INSERT` en `pole_wins`. Si viola `UNIQUE(chat_id, day_key, user_id)` (ya ganó hoy) o la PK (otro se adelantó) → no concede. **La restricción de la BD es la garantía**, no el código.
-5. `UPSERT` en `users` (nombre actual), `INSERT OR IGNORE` en `chats`.
-6. Reclamar legado: si existe `pole_legacy(chat_id, name)` con el nombre del usuario, mover sus puntos a `pole_adjust` y borrar la fila.
+1. Normalizar el texto y buscarlo en el diccionario. Sin coincidencia → fuera (sigue a nekomandos).
+2. `local` = `message.date` convertido a la zona de la pole. Con `window` y `local` fuera de la franja → no concede.
+3. `day_key` = fecha de `local`.
+4. En **una transacción** (`BEGIN IMMEDIATE`):
+   1. `n` = nº de filas de `pole_wins` de `(chat, pole, day_key)`. Si `n` ≠ puesto de la palabra → `ROLLBACK`, no concede.
+   2. `INSERT OR IGNORE` en `chats`; `UPSERT` en `users` (nombre actual).
+   3. `INSERT` en `pole_wins` con los **puntos de ese puesto**. Si viola `UNIQUE(chat, pole, day, user)` (ya ganó hoy) o la clave primaria (otro se adelantó) → `ROLLBACK`, no concede. **La restricción de la BD es la garantía**, no el código.
+   4. Reclamar legado: si hay `pole_legacy(chat, pole, name)` con su nombre, mover los puntos a `pole_adjust` y borrar la fila.
+5. Responder con el `prize` del puesto.
 
-**Ranking:** puntos = `SUM(CASE position WHEN 0 THEN 3 WHEN 1 THEN 2 ELSE 1 END)` de `pole_wins` + `pole_adjust`, unido a `users.display`, más las filas de `pole_legacy` (por nombre); `ORDER BY puntos DESC, display LIMIT 20`.
+**Ranking** (top 10 de `(chat, pole)`): por `user_id`, suma de `points` de `pole_wins` + `pole_adjust`, unido a `users.display`; más las filas de `pole_legacy` (por nombre). `ORDER BY puntos DESC, display ASC LIMIT 10`. El orden de desempate es una **propuesta** (Node no lo define): alfabético por nombre.
 
-🆕 Como cada victoria es una fila con fecha, quedan gratis el histórico por día, "ganadores de ayer", estadísticas por mes y deshacer una victoria errónea, sin migración nueva.
+🆕 Como cada victoria es una fila con fecha y puntos, quedan gratis el histórico por día, "ganadores de ayer", estadísticas por mes y deshacer la **última** victoria de un día.
 
-**Aceptación (tests):**
-- (a) Ganar a las 20:00, "reiniciar" a las 23:30 del mismo día → la pole del día siguiente se puede ganar.
-- (b) Bot parado entre las 22:59 y las 23:30 → el primer mensaje nuevo cuenta para la jornada nueva.
-- (c) 50 "oro" concurrentes → exactamente 1 oro.
-- (d) Cambios de hora de marzo y octubre, y suite con `TZ=UTC` y `TZ=Europe/Madrid`.
+**Aceptación (tests)**
+- (a) **Independencia:** ganar `pole` no afecta a `canaria` ni a `patitos`; ni un grupo a otro; la misma persona puede ganar en dos poles el mismo día.
+- (b) **Zonas:** a las 00:30 de Madrid, `pole` ya es del día nuevo y `canaria` sigue en el anterior; a las 01:00:01 de Madrid cambian las dos.
+- (c) **Franja:** `patitos` a 22:21:59 no, 22:22:00 sí, 22:22:59 sí, 22:23:00 no.
+- (d) **Orden y puestos:** `plata` antes que `oro` no cuenta; `pole` (alternativa) cuenta como oro; en `canaria` un segundo `pole canaria` no concede; una persona no gana dos puestos el mismo día en la misma pole.
+- (e) **Acumulado:** puntos de varios días suman; cambiar los `points` del fichero no cambia los ya ganados.
+- (f) **Reinicio:** ganar a las 20:00, "reiniciar" a las 23:30 → sigue sin poder ganar el mismo puesto; al día siguiente sí. Bot parado en el cambio de día → el primer mensaje nuevo cuenta para el día nuevo.
+- (g) **Concurrencia:** 50 "oro" simultáneos → exactamente 1 oro.
+- (h) **Cambios de hora** de marzo y octubre; suite con `TZ=UTC` y `TZ=Europe/Madrid`.
+- (i) **Configuración:** palabra repetida entre poles, zona o franja inválidas, comando repetido → el arranque falla con mensaje legible.
+- (j) **Ranking:** top 10 con empates, con más de 10 participantes y con legado sin reclamar.
 
 ---
 ### 7.4 Estadísticas
 
 `stats(key,count)` con `INSERT … ON CONFLICT DO UPDATE SET count=count+1`. Para no escribir en disco por **cada** comando, los contadores se acumulan en memoria y se vuelcan cada 30 s y al parar (pérdida máxima aceptable: 30 s de contadores). **Los puntos de pole nunca pasan por aquí**: van directos a SQL en la misma transacción que la victoria.
 
-Claves: `cmd:<comando>` para comandos usados y `pole:oro|plata|bronce` para poles. 🆕 `/stats` los muestra por separado.
+Claves: solo `cmd:<comando>`. 🆕 "Poles concedidas" de `/stats` **no** es un contador aparte: es `COUNT(*)` de `pole_wins`, así que no puede desfasarse de los puntos.
 
 ### 7.5 Nekomandos
 
@@ -452,9 +523,10 @@ El fichero de Node (`grupos_pole.json`) 🔎 tiene esta forma:
   "stats": { "neko": 12, "pole:oro": 3 } }
 ```
 
+- Todo lo de Node era **una sola pole**: se importa a la pole `pole` (`game_id='pole'`). Las demás empiezan a cero.
 - **v1** (sin `schemaVersion`): `scores` está indexado por **nombre** → va a `pole_legacy`.
-- **v2:** `scores` por `userId` → `pole_adjust` (+ `users` desde `names`); `legacyScores` → `pole_legacy`. `winners` y `nextPosition` **se descartan** (son estado de una jornada ya caducada).
-- `stats`: las claves `pole:*` pasan tal cual; el resto se importa como `cmd:<clave>`.
+- **v2:** `scores` por `userId` → `pole_adjust` (+ `users` desde `names`); `legacyScores` → `pole_legacy`. `winners` y `nextPosition` **se descartan** (son estado de un día ya caducado).
+- `stats`: las claves `pole:*` **se descartan** (el contador de poles ahora sale de `pole_wins`, y las victorias antiguas no están como filas); el resto se importa como `cmd:<clave>`.
 - **Idempotente:** solo se ejecuta si la BD es nueva (`PRAGMA user_version` = 0) **y** existe el fichero; después se renombra a `grupos_pole.json.importado`. Antes se **copia** siempre a `backups/`.
 - Un fichero corrupto **no tumba el arranque**: se aparta como `.corrupto`, se avisa y se empieza vacío.
 - ✅ **Dato real en esta máquina:** el `grupos_pole.json` de desarrollo está **vacío** (`{"chats": {}, "stats": {}}`), así que aquí no hay nada que migrar. ⚠️ La máquina de producción puede ser otra: se revisa allí antes de desplegar.
@@ -480,7 +552,6 @@ Se validan **una sola vez** al arrancar: un error se muestra legible y sale con 
 | `NEKITA_TOKEN` | **sí** | — | Token de @BotFather. Nunca se registra en logs |
 | `NEKITA_MASTER_ID` | no | — | Id numérico del admin; no numérico → aviso y se ignora |
 | `NEKITA_TZ` | no | `Europe/Madrid` | Zona IANA válida |
-| `NEKITA_POLE_CORTE` | no | `22:59` | Hora local de cambio de jornada (`HH:MM`) |
 | `NEKITA_CACHE_SEGUNDOS` | no | `300` | TTL de los lotes de imágenes |
 | `NEKITA_DATA_DIR` | no | `~/.nekita/data` | BD, copias, overrides |
 | `NEKITA_HTTP_PORT` | no | `8080` | `/health` y `/ready` en 127.0.0.1 |
@@ -489,8 +560,9 @@ Se validan **una sola vez** al arrancar: un error se muestra legible y sale con 
 | `NEKITA_BACKUP_HORA` | no | `04:00` | Hora local de la copia diaria |
 
 **Cambios respecto a Node:** se retiran `NEKITA_HORA_GUARDADO*` (ya no hay
-guardado diario) y `NEKITA_HORA_LIMPIEZA*` se unifica en `NEKITA_POLE_CORTE`
-(`22:59` equivale a los antiguos 22 / 59). Se documenta en el README.
+guardado diario) y `NEKITA_HORA_LIMPIEZA*` (el reset a las 22:59) **desaparece**:
+el día de cada pole lo define su zona en `games.toml` (4.3). `NEKITA_TZ` queda
+solo para `/hora`, `/dia`, nekomandos y copias. Se documenta en el README.
 `.env.example` incluye **todas** las variables, **sin comentar**, con valores
 vacíos o seguros (🔎 en Node estaban comentadas y `cp .env.example .env` no
 daba una configuración usable).
@@ -529,7 +601,7 @@ Aquí **el pegamento se prueba desde el principio**.
 
 | Nivel | Qué | Cómo |
 |---|---|---|
-| Unitario | `service.py` puro: normalización, jornada, caché, selección de posición, formateo | `pytest`, sin red ni BD |
+| Unitario | `service.py` puro: normalización, día local y franja, caché, selección de puesto, formateo | `pytest`, sin red ni BD |
 | Repo | SQL real | SQLite **en memoria** con las migraciones reales (no mocks) |
 | Integración (el más valioso) | Flujo completo Telegram→handler→respuesta | `Bot` real de aiogram con una **sesión falsa** (`BaseSession` propia) que registra cada método enviado; se alimenta con `dp.feed_update(bot, Update(...))` y una BD en memoria |
 | Tiempo | Jornadas, cambios de hora, medianoche, reinicio | Reloj inyectado (función `now()` en el servicio), **no** parches globales; suite con `TZ=UTC` y `TZ=Europe/Madrid` |
@@ -574,7 +646,7 @@ la anterior en rojo.
 | 2 | Núcleo del bot | Bot arranca, polling, errores, admin; `/help` y menú automáticos | 0, 1 |
 | 3 | Funciones sencillas | `/start /hola /hora /dia /id /health /stats` + feature de juguete | 2 |
 | 4 | Nekomandos | Frases libres con overrides | 2 |
-| 5 | Pole | Pole completa, atómica y sin cron | 1, 2 |
+| 5 | Poles | Varias poles independientes por datos, atómicas y sin cron | 1, 2 |
 | 6 | Imágenes | `/neko /perro /cangrejo /moneda` con caché y plan B | 2 |
 | 7 | Operación | systemd, copias, restauración, medición, prueba real | 1–6 |
 | 8 | Extras (opcional) | Webhook, panel, IA, recordatorios… | 7 |
@@ -644,17 +716,19 @@ la anterior en rojo.
 
 **Hecho cuando:** tests de normalización (acentos, mayúsculas, espacios), zona inválida (no rompe), override inválido (se rechaza con aviso y el bot arranca) y **orden pole → nekomando** (una frase que sea pole no llega a nekomando).
 
-### Fase 5 — Pole
+### Fase 5 — Poles
 
 **Entregables**
-- [ ] `core/timeutil.py`: cálculo de **jornada** (4.3) con reloj inyectado.
-- [ ] `features/pole`: repo SQL (7.3), servicio, router (solo grupos), `/pole`, mensajes literales.
-- [ ] Reclamación de puntos legado por nombre.
-- [ ] Estadísticas `pole:*` en la misma transacción que la victoria.
+- [ ] `core/timeutil.py`: día local por zona y franja `[from,to)` con reloj inyectado.
+- [ ] `features/pole/games.py` + `games.toml`: carga con `tomllib`, validación (4.3.1) e índice palabra → (pole, puesto).
+- [ ] Las tres poles de partida (`pole`, `canaria`, `patitos`) con los puntos confirmados (decisión 10).
+- [ ] `features/pole`: repo SQL (7.3), servicio, router (solo grupos) y **un comando de ranking por pole**, registrados desde el fichero (el contrato de feature, 6.1, debe permitir comandos dinámicos: se verifica en la Fase 2).
+- [ ] Top 10 por pole y grupo; mensajes literales (Apéndice A).
+- [ ] Reclamación de puntos legado por nombre (pole `pole`).
 
-**Hecho cuando:** pasan los cuatro tests de aceptación de 7.3; "plata" antes que "oro" no cuenta; una persona no gana dos posiciones el mismo día; en privado se ignora; el ranking limita a 20 y cabe en 4096 caracteres; cambiar de alias no cambia los puntos.
+**Hecho cuando:** pasan los tests (a)–(j) de 7.3; en privado se ignora; el top 10 cabe en 4096 caracteres con nombres largos; cambiar de alias no cambia los puntos; añadir una pole de prueba **solo editando `games.toml`** la hace funcionar con su comando, sin tocar código.
 
-**Riesgos:** la jornada en los dos domingos de cambio de hora; nombres con caracteres especiales (se envía sin `parse_mode`).
+**Riesgos:** el día local en los dos domingos de cambio de hora; la franja de `patitos` depende de que el bot reciba el mensaje a tiempo (con *Group Privacy* activo no lo ve); nombres con caracteres especiales (se envía sin `parse_mode`).
 
 ### Fase 6 — Imágenes
 
@@ -676,7 +750,7 @@ la anterior en rojo.
 - [ ] **Medición real** de RAM/CPU/disco contra el presupuesto de la sección 2, anotada en un ADR.
 - [ ] Copia y **restauración probada** (7.7) y procedimiento de actualización.
 - [ ] README completo: instalación, *Group Privacy*, variables, equivalencias con Node, problemas frecuentes.
-- [ ] Prueba manual con **token real** en un grupo de prueba: todos los comandos, pole completa, reinicio a mitad de jornada, `kill -9` y arranque. ⚠️ Nada de esto se ha probado nunca contra Telegram real.
+- [ ] Prueba manual con **token real** en un grupo de prueba: todos los comandos, pole completa, reinicio a mitad de día, `kill -9` y arranque. ⚠️ Nada de esto se ha probado nunca contra Telegram real.
 - [ ] Importar los datos reales de producción (tras revisar el fichero) y retirar el servicio Node.
 - [ ] `CHANGELOG.md` y etiqueta `v2.0.0`.
 
@@ -718,12 +792,17 @@ Se aplicó la opción marcada ✔ por defecto. **Cambiarlas es barato ahora, car
 | 1 | Cliente de Telegram | **aiogram** · python-telegram-bot | ✔ aiogram |
 | 2 | Recepción | **polling** · webhook | ✔ polling |
 | 3 | Despliegue | **systemd** · Docker | ✔ systemd (Docker opcional) |
-| 4 | Corte de la jornada de pole | **22:59** · 00:00 | ✔ 22:59 (mantiene el comportamiento actual) |
-| 5 | Pole sin cron (jornada calculada) | **sí** · mantener cron | ✔ sí |
+| 4 | Inicio del día de cada pole | 22:59 · **00:00 en la zona de cada pole** | ✔ 00:00 local de la pole (petición del usuario; sustituye a Node) |
+| 5 | Poles sin cron (día calculado) | **sí** · mantener cron | ✔ sí |
 | 6 | Importar datos de Node | **sí, una vez** · empezar de cero | ✔ sí |
 | 7 | Límite de uso en comandos de imagen | **sí (1 cada 3 s)** · no | ✔ sí |
 | 8 | Nombre del fichero BD y ubicación | **`~/.nekita/data/nekita.db`** · `/var/lib/nekita` | ✔ `NEKITA_DATA_DIR` configurable |
 | 9 | Licencia | **GPL-3.0** | ✔ sin cambios |
+| 10 | Puntos de `canaria` y `patitos` (puesto único) | **3** · otro | ⚠️ 3 por defecto, sin confirmar |
+| 11 | Plata/bronce de `pole` con palabras alternativas | solo `plata` y `bronce` · añadir alternativas | ⚠️ solo `plata`/`bronce`; `pole` es alternativa de `oro` |
+| 12 | Desempate en el ranking | **alfabético** · quien llegó antes · compartir puesto | ⚠️ alfabético, propuesta mía |
+| 13 | Definir poles | **fichero `games.toml` + reinicio** · comandos desde el chat | ✔ fichero |
+| 14 | Poles de los nekomandos (`peninsular`, `andaluza`, `palitos`, `cuack`, `… canarias`) | siguen siendo texto · convertirlas en poles | ⚠️ siguen siendo texto hasta que se definan (4.3.2) |
 
 ---
 ## Apéndice A — Textos literales (contrato)
@@ -741,10 +820,10 @@ Copiados del código Node ✅. Los tests de las fases 3–6 comparan contra esto
 | `/help` (cabecera) | `Mis comandos son los siguientes-nya:` + línea en blanco |
 | `/help` (por categoría, orden alfabético) | `📋 <categoría>:` y, indentado con 2 espacios, `/<comando> — <descripción>` (ordenados) |
 | `/help` (pie) | `¡Y muchos otros comandos más directamente escritos! Como por ejemplo:` + una línea por grupo de frases (ver Apéndice B; 🆕 generado desde los datos) |
-| `/pole` sin datos | `Aún no hay puntuaciones registradas-nya. ¡Empieza a participar escribiendo oro, plata o bronce!` |
-| `/pole` vacío | `No hay puntuaciones de pole aún-nya. ¡Sé el primero!` |
-| `/pole` cabecera | `Puntuaciones de pole-nya!` + línea en blanco; cada fila `<🥇/🥈/🥉/#N> <nombre>: <N> pts` |
-| Pole ganada | `¡Enhorabuena <nombre>! Has ganado la pole-nya` (`la plata-nya`, `el bronce-nya`) |
+| Ranking vacío (cada pole) | `No hay puntuaciones de <title> aún-nya. ¡Sé el primero!` (con `title = pole` es el literal de Node ✅) |
+| Ranking, cabecera | `Puntuaciones de <title>-nya!` + línea en blanco; cada fila `<🥇/🥈/🥉/#N> <nombre>: <N> pts`, máx. **10** filas. Con `title = pole`, literal de Node ✅ salvo el tope (Node: 20) |
+| Pole ganada | `¡Enhorabuena <nombre>! Has ganado <prize>-nya` con `prize` = `la pole` / `la plata` / `el bronce` ✅ en la pole principal; en las demás, el `prize` de `games.toml` 🆕 |
+| Texto de Node sin uso | `Aún no hay puntuaciones registradas-nya. ¡Empieza a participar escribiendo oro, plata o bronce!` (distinguía "sin datos" de "vacío"; aquí no hay esa diferencia) |
 | `/stats` | `📊 Estadísticas de Nekita v<versión>-nya!` · `Grupos activos: N` · 🆕 `Comandos usados: N` · 🆕 `Poles concedidas: N` · `Comandos más usados:` + `  • <cmd>: <N>` |
 | Sin permiso | `Este comando es solo para el administrador-nya.` |
 | Error en comando | `Algo ha fallado-nya (ref. <6 hex>)` |

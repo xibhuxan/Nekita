@@ -166,11 +166,54 @@ añadir una pole nueva es añadir un bloque al fichero (y reiniciar).
 
 | `id` | Comando | Zona | Franja | Puestos (palabras → puntos) |
 |---|---|---|---|---|
-| `pole` | `/pole` | `Europe/Madrid` | todo el día | 🥇 `oro` o `pole` → 3 · 🥈 `plata` → 2 · 🥉 `bronce` → 1 |
-| `canaria` | `/pole_canaria` | `Atlantic/Canary` | todo el día | único puesto: `pole canaria` → ⚠️ puntos por decidir |
-| `patitos` | `/pole_patitos` | `Europe/Madrid` | 22:22–22:23 | único puesto: `pole patitos` → ⚠️ puntos por decidir |
+| `pole` | `/pole` | `Europe/Madrid` | todo el día | 🥇 `oro` o `pole` → 3 · 🥈 `plata` → 2 · 🥉 `bronce` → 1 (plata y bronce, de momento, sin alternativas) |
+| `canaria` | `/pole_canaria` | `Atlantic/Canary` | todo el día | único puesto: `pole canaria` → **1** |
+| `patitos` | `/pole_patitos` | `Europe/Madrid` | 22:22–22:23 | único puesto: `pole patitos` → **1** |
 
-⚠️ Palabras alternativas de plata y bronce, y los puntos de `canaria` y `patitos`: no los has indicado; la spec propone 3 puntos al puesto único, como el oro de Node.
+**Ejemplo de `games.toml`** (las tres poles de partida; es el contenido que debe tener el fichero en la Fase 5):
+
+```toml
+[[game]]
+id = "pole"
+title = "pole"
+command = "pole"
+tz = "Europe/Madrid"
+  [[game.position]]
+  prize = "la pole"
+  points = 3
+  words = ["oro", "pole"]
+  [[game.position]]
+  prize = "la plata"
+  points = 2
+  words = ["plata"]
+  [[game.position]]
+  prize = "el bronce"
+  points = 1
+  words = ["bronce"]
+
+[[game]]
+id = "canaria"
+title = "pole canaria"
+command = "pole_canaria"
+tz = "Atlantic/Canary"
+  [[game.position]]
+  prize = "la pole canaria"
+  points = 1
+  words = ["pole canaria"]
+
+[[game]]
+id = "patitos"
+title = "pole patitos"
+command = "pole_patitos"
+tz = "Europe/Madrid"
+window = { from = "22:22", to = "22:23" }
+  [[game.position]]
+  prize = "la pole patitos"
+  points = 1
+  words = ["pole patitos"]
+```
+
+**Preparado para nombres alternativos:** `words` es **siempre una lista**, aunque hoy tenga un solo elemento. Dar a `plata` el alias `segundo`, por ejemplo, es cambiar `words = ["plata"]` por `words = ["plata", "segundo"]` y reiniciar: sin código, sin migración y sin tocar los puntos ya ganados (que se guardan por **puesto**, no por palabra). Las palabras se comparan **normalizadas** (4.5), así que `Plata`, `plata ` y `PLATA` son la misma. Test específico en 7.3 (k).
 
 **Reglas**
 - Solo en **grupos y supergrupos**. En privado, canales o mensajes sin usuario (admin anónimo) se **ignora**.
@@ -211,7 +254,7 @@ Franja `22:22`–`22:23` (semiabierta): `22:21:59` no · `22:22:00` sí · `22:2
 
 #### 4.3.1 Validación al arrancar (error legible y `exit 1`)
 
-`id` y `command` únicos y válidos (`[a-z0-9_]+`, el comando no puede chocar con otro de cualquier feature); `tz` IANA válida; `window` con `from < to`; al menos un puesto; `points` enteros ≥ 0; ninguna palabra vacía; **ninguna palabra repetida entre poles**.
+`id` y `command` únicos y válidos (`[a-z0-9_]+`, el comando no puede chocar con otro de cualquier feature); `tz` IANA válida; `window` con `from < to`; al menos un puesto; `points` enteros ≥ 0; ninguna palabra vacía; `words` es una lista no vacía; **ninguna palabra repetida entre poles ni dentro de una pole, comparadas ya normalizadas** (`Plata` y `plata ` cuentan como la misma).
 
 #### 4.3.2 Poles por definir
 
@@ -481,7 +524,7 @@ Para un mensaje de grupo con `user_id` y `chat_id`:
    4. Reclamar legado: si hay `pole_legacy(chat, pole, name)` con su nombre, mover los puntos a `pole_adjust` y borrar la fila.
 5. Responder con el `prize` del puesto.
 
-**Ranking** (top 10 de `(chat, pole)`): por `user_id`, suma de `points` de `pole_wins` + `pole_adjust`, unido a `users.display`; más las filas de `pole_legacy` (por nombre). `ORDER BY puntos DESC, display ASC LIMIT 10`. El orden de desempate es una **propuesta** (Node no lo define): alfabético por nombre.
+**Ranking** (top 10 de `(chat, pole)`): por `user_id`, suma de `points` de `pole_wins` + `pole_adjust`, unido a `users.display`; más las filas de `pole_legacy` (por nombre). `ORDER BY puntos DESC, display COLLATE NOCASE ASC, user_id ASC LIMIT 10`. **Desempate** (✅ confirmado): a igual puntuación, **alfabético por nombre** sin distinguir mayúsculas; si el nombre también coincide, por `user_id` para que el orden sea siempre el mismo. ⚠️ `NOCASE` de SQLite solo ignora mayúsculas **ASCII**. ✅ Comprobado con `sqlite3` de esta máquina: con 5 puntos cada uno, `Ana`/`ana`/`zoe` salen en ese orden y `Álvaro`/`álvaro` salen **después de `zoe`** (los nombres que empiezan por letra con acento o no latina van al final entre empatados). Alternativa si molesta: ordenar en Python con `str.casefold()` tras leer solo 10 filas empatadas. Se deja como mejora opcional. Los empatados **no comparten** número de puesto (salen como 🥇 🥈 🥉 y `#4`… seguidos).
 
 🆕 Como cada victoria es una fila con fecha y puntos, quedan gratis el histórico por día, "ganadores de ayer", estadísticas por mes y deshacer la **última** victoria de un día.
 
@@ -495,7 +538,8 @@ Para un mensaje de grupo con `user_id` y `chat_id`:
 - (g) **Concurrencia:** 50 "oro" simultáneos → exactamente 1 oro.
 - (h) **Cambios de hora** de marzo y octubre; suite con `TZ=UTC` y `TZ=Europe/Madrid`.
 - (i) **Configuración:** palabra repetida entre poles, zona o franja inválidas, comando repetido → el arranque falla con mensaje legible.
-- (j) **Ranking:** top 10 con empates, con más de 10 participantes y con legado sin reclamar.
+- (j) **Ranking:** top 10 con empates (orden alfabético, estable entre llamadas), con más de 10 participantes y con legado sin reclamar.
+- (k) **Alias:** una pole de prueba con `words = ["plata", "segundo"]` concede el mismo puesto con cualquiera de las dos; con mayúsculas y espacios sobrantes también; y un alias que ya usa otra pole (o que normalizado coincide) hace fallar el arranque.
 
 ---
 ### 7.4 Estadísticas
@@ -721,7 +765,7 @@ la anterior en rojo.
 **Entregables**
 - [ ] `core/timeutil.py`: día local por zona y franja `[from,to)` con reloj inyectado.
 - [ ] `features/pole/games.py` + `games.toml`: carga con `tomllib`, validación (4.3.1) e índice palabra → (pole, puesto).
-- [ ] Las tres poles de partida (`pole`, `canaria`, `patitos`) con los puntos confirmados (decisión 10).
+- [ ] Las tres poles de partida (`pole`, `canaria`, `patitos`) con los puntos del ejemplo de 4.3 (3/2/1; 1; 1).
 - [ ] `features/pole`: repo SQL (7.3), servicio, router (solo grupos) y **un comando de ranking por pole**, registrados desde el fichero (el contrato de feature, 6.1, debe permitir comandos dinámicos: se verifica en la Fase 2).
 - [ ] Top 10 por pole y grupo; mensajes literales (Apéndice A).
 - [ ] Reclamación de puntos legado por nombre (pole `pole`).
@@ -798,9 +842,9 @@ Se aplicó la opción marcada ✔ por defecto. **Cambiarlas es barato ahora, car
 | 7 | Límite de uso en comandos de imagen | **sí (1 cada 3 s)** · no | ✔ sí |
 | 8 | Nombre del fichero BD y ubicación | **`~/.nekita/data/nekita.db`** · `/var/lib/nekita` | ✔ `NEKITA_DATA_DIR` configurable |
 | 9 | Licencia | **GPL-3.0** | ✔ sin cambios |
-| 10 | Puntos de `canaria` y `patitos` (puesto único) | **3** · otro | ⚠️ 3 por defecto, sin confirmar |
-| 11 | Plata/bronce de `pole` con palabras alternativas | solo `plata` y `bronce` · añadir alternativas | ⚠️ solo `plata`/`bronce`; `pole` es alternativa de `oro` |
-| 12 | Desempate en el ranking | **alfabético** · quien llegó antes · compartir puesto | ⚠️ alfabético, propuesta mía |
+| 10 | Puntos de `canaria` y `patitos` (puesto único) | 3 · **1** | ✔ 1 (confirmado) |
+| 11 | Plata/bronce de `pole` con palabras alternativas | **ninguna por ahora, pero preparado** · añadirlas ya | ✔ ninguna; `words` es una lista (4.3, test k) |
+| 12 | Desempate en el ranking | **alfabético** · quien llegó antes · compartir puesto | ✔ alfabético (confirmado) |
 | 13 | Definir poles | **fichero `games.toml` + reinicio** · comandos desde el chat | ✔ fichero |
 | 14 | Poles de los nekomandos (`peninsular`, `andaluza`, `palitos`, `cuack`, `… canarias`) | siguen siendo texto · convertirlas en poles | ⚠️ siguen siendo texto hasta que se definan (4.3.2) |
 

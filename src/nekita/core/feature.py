@@ -14,6 +14,11 @@ if TYPE_CHECKING:
 
 COMMAND_RE = re.compile(r"^[a-z0-9_]{1,32}$")  # límite de Telegram para el menú
 
+
+class FeatureConfigError(ValueError):
+    """Configuración de una feature inválida: aborta el arranque con un mensaje legible."""
+
+
 Hook = Callable[["AppContext"], Awaitable[None]]
 
 

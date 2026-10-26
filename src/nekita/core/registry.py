@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from aiogram.types import BotCommand
 
-from nekita.core.feature import CommandInfo, Feature
+from nekita.core.feature import CommandInfo, Feature, FeatureConfigError
 
 HELP_HEADER = "Mis comandos son los siguientes-nya:"
 HELP_FOOTER = "¡Y muchos otros comandos más directamente escritos! Como por ejemplo:"
@@ -19,12 +19,12 @@ class Registry:
         nombres = Counter(f.name for f in features)
         repetidas = sorted(n for n, c in nombres.items() if c > 1)
         if repetidas:
-            raise ValueError(f"Features repetidas: {', '.join(repetidas)}")
+            raise FeatureConfigError(f"Features repetidas: {', '.join(repetidas)}")
         self._commands: dict[str, CommandInfo] = {}
         for feature in features:
             for cmd in feature.commands:
                 if cmd.name in self._commands:
-                    raise ValueError(f"El comando /{cmd.name} está definido dos veces")
+                    raise FeatureConfigError(f"El comando /{cmd.name} está definido dos veces")
                 self._commands[cmd.name] = cmd
         self._help_lines = [line for f in features for line in f.help_lines]
 

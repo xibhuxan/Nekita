@@ -1,0 +1,111 @@
+# Definición de las poles. Cambiar horas, puntos o palabras = editar este fichero y reiniciar.
+#
+#  id       identificador estable (clave en la BD: NO lo cambies una vez en uso)
+#  title    nombre que se muestra en el ranking
+#  command  comando del ranking (/<command>), [a-z0-9_]
+#  tz       zona IANA: el día de esta pole empieza a las 00:00 de ESA zona
+#  window   (opcional) franja local [from, to) en la que se puede ganar; sin ella, todo el día
+#  position puestos EN ORDEN (el primero que llegue gana el primero...). Cada uno con
+#           prize (texto del premio), points y words (palabras exactas, sin importar
+#           mayúsculas/acentos). Una persona gana como mucho un puesto por día y pole.
+#
+# Las palabras no pueden repetirse entre poles. Los puntos ya ganados no cambian al editar.
+
+# --- Pole peninsular: 4 puestos (4, 3, 2 y 1 puntos) ---------------------------------
+[[game]]
+id = "pole"
+title = "pole"
+command = "pole"
+tz = "Europe/Madrid"
+  [[game.position]]
+  prize = "la pole"
+  points = 4
+  words = ["oro", "pole", "pole peninsular"]
+  [[game.position]]
+  prize = "la plata"
+  points = 3
+  words = ["plata"]
+  [[game.position]]
+  prize = "el bronce"
+  points = 2
+  words = ["bronce"]
+  [[game.position]]
+  prize = "el aluminio"
+  points = 1
+  words = ["aluminio"]
+
+# --- Poles de un solo puesto (gana quien llegue antes) --------------------------------
+[[game]]
+id = "canaria"
+title = "pole canaria"
+command = "pole_canaria"
+tz = "Atlantic/Canary"
+  [[game.position]]
+  prize = "la pole canaria"
+  points = 1
+  words = ["pole canaria"]
+
+[[game]]
+id = "andaluza"
+title = "pole andaluza"
+command = "pole_andaluza"
+tz = "Europe/Madrid"
+  [[game.position]]
+  prize = "la pole andaluza"
+  points = 1
+  words = ["pole andaluza"]
+
+[[game]]
+id = "palitos"
+title = "pole palitos"
+command = "pole_palitos"
+tz = "Europe/Madrid"
+window = { from = "11:11", to = "11:12" }
+  [[game.position]]
+  prize = "la pole palitos"
+  points = 1
+  words = ["pole palitos"]
+
+[[game]]
+id = "patitos"
+title = "pole patitos"
+command = "pole_patitos"
+tz = "Europe/Madrid"
+window = { from = "22:22", to = "22:23" }
+  [[game.position]]
+  prize = "la pole patitos"
+  points = 1
+  words = ["pole patitos"]
+
+[[game]]
+id = "cuack"
+title = "pole cuack"
+command = "pole_cuack"
+tz = "Europe/Madrid"
+window = { from = "22:22", to = "22:23" }
+  [[game.position]]
+  prize = "la pole cuack"
+  points = 1
+  words = ["pole cuack"]
+
+[[game]]
+id = "patitos_canarias"
+title = "pole patitos canarias"
+command = "pole_patitos_canarias"
+tz = "Atlantic/Canary"
+window = { from = "22:22", to = "22:23" }
+  [[game.position]]
+  prize = "la pole patitos canarias"
+  points = 1
+  words = ["pole patitos canarias"]
+
+[[game]]
+id = "cuack_canarias"
+title = "pole cuack canarias"
+command = "pole_cuack_canarias"
+tz = "Atlantic/Canary"
+window = { from = "22:22", to = "22:23" }
+  [[game.position]]
+  prize = "la pole cuack canarias"
+  points = 1
+  words = ["pole cuack canarias"]

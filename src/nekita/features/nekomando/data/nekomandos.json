@@ -1,0 +1,28 @@
+{
+  "hora china":             {"grupo": "horas",  "etiqueta": "Hora china",       "respuesta": "En China son las: {hora:Asia/Shanghai}"},
+  "hora":                   {"grupo": "horas",  "etiqueta": "Hora",             "respuesta": "En España (península) son las: {hora:Europe/Madrid}"},
+  "hora canaria":           {"grupo": "horas",  "etiqueta": "Hora canaria",     "respuesta": "En Canarias son las: {hora:Atlantic/Canary}"},
+  "hora rusa":              {"grupo": "horas",  "etiqueta": "Hora rusa",        "respuesta": "En Rusia (Moscú) son las: {hora:Europe/Moscow}"},
+  "hora venezuela":         {"grupo": "horas",  "etiqueta": "Hora venezuela",   "respuesta": "Sin comida no hay hora."},
+
+  "pole canaria":           {"grupo": "poles",  "etiqueta": "Pole canaria",     "respuesta": "A las 12:00 de canarias"},
+  "pole peninsular":        {"grupo": "poles",  "etiqueta": "Pole peninsular",  "respuesta": "A las 11:00 de canarias"},
+  "pole andaluza":          {"grupo": "poles",  "etiqueta": "Pole andaluza",    "respuesta": "Hazla cuando quieras, pero a las 06:00 península está bien-nya."},
+  "pole palitos":           {"grupo": "poles",  "etiqueta": "Pole palitos",     "respuesta": "A las 11:11, tú puedes-nya!"},
+  "pole patitos":           {"grupo": "poles",  "etiqueta": "Pole patitos",     "respuesta": "A las 22:22, tú puedes-nya!"},
+  "pole cuack":             {"grupo": "poles2", "etiqueta": "Pole cuack",       "respuesta": "A las 22:22, tú puedes-nya!"},
+  "pole patitos canarias":  {"respuesta": "A las 22:22, tú puedes-nya!"},
+  "pole cuack canarias":    {"respuesta": "A las 22:22, tú puedes-nya!"},
+
+  "dobby":                  {"grupo": "poles2", "etiqueta": "Dobby",            "respuesta": "Dobby no tiene amo Dobby es un elfo libre"},
+  "plc":                    {"grupo": "poles2", "etiqueta": "PLC",              "respuesta": "Eso te lo hago yo con un Arduino de 3 euros."},
+  ":)":                     {"grupo": "caras",  "etiqueta": ":)",               "respuesta": ":)"},
+  ":(":                     {"grupo": "caras",  "etiqueta": ":(",               "respuesta": "Sonríe, eres especial-nya!!"},
+  ":3":                     {"grupo": "caras",  "etiqueta": ":3",               "respuesta": "¯\\_(=^･ω･^)_/¯"},
+
+  "buenos dias":           {"grupo": "saludos","etiqueta": "Buenos días",      "respuesta": "Buenos días para ti también."},
+  "buenas tardes":          {"grupo": "saludos","etiqueta": "Buenas tardes",    "respuesta": "Buenas tardes, ¿ya has comido-nya?"},
+  "buenas noches":          {"grupo": "saludos","etiqueta": "Buenas noches",    "respuesta": "Buenas noches, que duermas bien-NYA!!"},
+  "buenas":                 {"grupo": "saludos","etiqueta": "Buenas",           "respuesta": "Hola, ¿qué tal?"},
+  "hola":                   {"grupo": "saludos","etiqueta": "Hola",             "respuesta": "Hola, ¿qué tal?"}
+}

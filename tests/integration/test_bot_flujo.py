@@ -26,7 +26,21 @@ async def test_responde_y_publica_menu(entorno: Entorno) -> None:
     assert await fake.wait_for_sent(1) == ["eco"]
     menus = [c for c in fake.calls if isinstance(c, SetMyCommands)]
     publicados = {c.command for c in menus[0].commands}
-    assert publicados == {"eco", "lento", "rapido", "roto", "viejo", "health", "help"}
+    assert publicados == {
+        "eco",
+        "lento",
+        "rapido",
+        "roto",
+        "viejo",
+        "health",
+        "help",
+        "start",
+        "hola",
+        "hora",
+        "dia",
+        "id",
+    }
+    assert "stats" not in publicados  # admin: nunca en el menu
     assert "secreto" not in publicados
     assert rt.ctx.stats.pending == 1  # contado tras el éxito
 

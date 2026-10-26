@@ -17,7 +17,7 @@ from nekita.core.db import Database
 from nekita.core.feature import CommandInfo, Feature
 from nekita.core.registry import Registry
 from nekita.core.stats import Stats
-from nekita.features import meta
+from nekita.features import info, meta, start
 from tests.support.fake_telegram import FakeTelegram
 
 ADMIN = 7
@@ -64,7 +64,12 @@ def make_features(log: list[str]) -> list[Feature]:
         CommandInfo("secreto", "Admin", admin_only=True),
         CommandInfo("viejo", "Caduca", drop_if_stale=True),
     ]
-    return [Feature(name="t", router=router, commands=comandos), meta.build()]
+    return [
+        Feature(name="t", router=router, commands=comandos),
+        start.build(),
+        info.build(),
+        meta.build(),
+    ]
 
 
 @pytest.fixture

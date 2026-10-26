@@ -41,10 +41,13 @@ class Stats:
             self._pending.update(lote)
             raise
 
-    async def top_commands(self, db: Database, limit: int = 10) -> list[tuple[str, int]]:
-        """Top de comandos (BD + lo pendiente en memoria)."""
+    async def all_commands(self, db: Database) -> list[tuple[str, int]]:
+        """Todos los comandos (BD + lo pendiente en memoria), de más a menos usado."""
         total: Counter[str] = Counter(self._pending)
         for key, count in await db.fetchall("SELECT key, count FROM stats WHERE key LIKE 'cmd:%'"):
             total[key] += count
         cmds = [(k.removeprefix("cmd:"), v) for k, v in total.items() if k.startswith("cmd:")]
-        return sorted(cmds, key=lambda kv: (-kv[1], kv[0]))[:limit]
+        return sorted(cmds, key=lambda kv: (-kv[1], kv[0]))
+
+    async def top_commands(self, db: Database, limit: int = 10) -> list[tuple[str, int]]:
+        return (await self.all_commands(db))[:limit]

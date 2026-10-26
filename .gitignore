@@ -23,3 +23,6 @@ backups/
 .idea/
 .claude/
 .DS_Store
+
+# Bloqueos de LibreOffice
+.~lock.*

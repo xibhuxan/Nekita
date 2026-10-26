@@ -19,9 +19,10 @@
 
 ## 1. Objetivo y alcance
 
-**Objetivo:** reescribir Nekita en **Python + FastAPI**, con buena estructura,
-**SQLite** como base de datos y una forma muy fácil de añadir funciones nuevas,
-sin sobreingeniería y sobre un servidor pequeño.
+**Objetivo:** reescribir Nekita en **Python (asyncio + aiogram)**, sin servidor
+web, con buena estructura, **SQLite** como base de datos y una forma muy fácil
+de añadir funciones nuevas, sin sobreingeniería y sobre un servidor pequeño
+(**ligero a propósito**: pocas dependencias, sin Docker, sin Redis).
 
 **Debe:**
 1. Conservar **todas las funciones actuales** (sección 4), con los mismos textos.
@@ -30,8 +31,12 @@ sin sobreingeniería y sobre un servidor pequeño.
 4. Permitir añadir una función nueva **creando una carpeta**, sin tocar el núcleo (sección 6).
 5. Poder probarse de forma automática, incluido el flujo completo de Telegram sin red.
 
-**No es objetivo (ahora):** IA/LLM, panel web, varios idiomas, métricas con
-Prometheus, webhook (la estructura deja hueco: Fase 8), alta disponibilidad o
+**Planeado después (Fase 8, 6.4):** **IA remota** (el modelo corre en otro PC
+por VPN o en la nube; el servidor solo hace llamadas HTTP salientes) y, si se
+decide, avisos proactivos de las poles.
+
+**No es objetivo (ahora):** panel web, servidor HTTP/FastAPI (retirado, decisión
+17), varios idiomas, métricas con Prometheus, webhook, alta disponibilidad o
 varias instancias (es **una** instancia con un SQLite local), ORM, colas, Redis.
 
 ---
@@ -46,7 +51,7 @@ varias instancias (es **una** instancia con un SQLite local), ORM, colas, Redis.
 | SO | Debian estable | Python y SQLite del sistema |
 
 - ⚠️ **Python en destino:** Debian 13 trae Python 3.13 y es la versión objetivo (`requires-python >=3.13`). Comprobar en la máquina real: `python3 --version` y `python3 -c "import sqlite3; print(sqlite3.sqlite_version)"`. Se necesita **SQLite ≥ 3.37** para tablas `STRICT`; si fuera menor se quita `STRICT` y se compensa con `CHECK`.
-- ✅ **En desarrollo** el Python del sistema es 3.14; `uv` descargó 3.13.16 y resolvió sin conflictos aiogram, fastapi, uvicorn, pydantic-settings, httpx, pytest, pytest-asyncio, pytest-cov, ruff y mypy. Se desarrolla con **3.13** para igualar el destino.
+- ✅ **En desarrollo** el Python del sistema es 3.14; `uv` descargó 3.13.16 y resolvió sin conflictos aiogram, pydantic-settings (⚠️ la resolución original incluía también fastapi y uvicorn, ya retirados; se vuelve a resolver en la Fase 0), httpx, pytest, pytest-asyncio, pytest-cov, ruff y mypy. Se desarrolla con **3.13** para igualar el destino.
 
 **Presupuesto (hipótesis a medir en la Fase 6, no cifras garantizadas):**
 
@@ -70,7 +75,7 @@ Resueltas por defecto con el criterio "lo más simple que cumple". Son
 | # | Tema | Elegido | Por qué | Descartado |
 |---|---|---|---|---|
 | 1 | Cliente de Telegram | **aiogram 3** (✅ 3.31.0) | Asíncrono nativo; `Router` por módulo encaja con "una carpeta por función"; filtros, middlewares y `flags` | python-telegram-bot (válido, peor encaje de routers/flags) |
-| 2 | Web | **FastAPI** (✅ 0.148.0) + **uvicorn** (✅ 0.54.0) | Pedido explícito; `lifespan`, `/health` HTTP y hueco para admin/webhook | — |
+| 2 | Servidor web | **Ninguno** (punto de entrada `asyncio` simple) | Con polling no hace falta; menos RAM, disco y dependencias. Salud vigilada por systemd (10) | FastAPI + uvicorn (retirado: solo se justificaría con un panel web; ver decisión 17) |
 | 3 | Recepción | **Long polling** | Sin dominio, HTTPS ni puertos abiertos | Webhook (Fase 8, opcional) |
 | 4 | Base de datos | **SQLite** con **aiosqlite**, SQL explícito | Un fichero, ACID, sin servidor | PostgreSQL; SQLAlchemy+Alembic (pesados para ~7 tablas) |
 | 5 | Migraciones | Ficheros `NNNN_nombre.sql` + `PRAGMA user_version`, ejecutor propio (~40 líneas) | Transparente y suficiente | Alembic |
@@ -82,20 +87,24 @@ Resueltas por defecto con el criterio "lo más simple que cumple". Son
 | 11 | Despliegue | **systemd** en Debian, venv en `/opt/nekita` | Sin demonio Docker; sandbox y límites de systemd | Docker (opcional, `python:3.13-slim`) |
 | 12 | Licencia | GPL-3.0 (se mantiene `LICENSE`) | Sin cambios | — |
 
-**Dependencias de producción (solo estas):** `aiogram`, `fastapi`, `uvicorn`,
-`pydantic-settings`, `httpx`, `aiosqlite`, `tzdata`.
+**Dependencias de producción (solo estas):** `aiogram`, `pydantic-settings`,
+`httpx`, `aiosqlite`, `tzdata`. (`pydantic` ya llega con aiogram.)
 **Solo desarrollo:** `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `mypy`, `pip-audit`.
 
 > ⚠️ `aiosqlite` **no se ha instalado ni probado** todavía; las demás versiones
 > sí se resolvieron. Es una dependencia pequeña (envoltorio de hilo sobre
 > `sqlite3`), pero se confirma en la Fase 0.
 
-**Sobre FastAPI, con honestidad:** para un bot que solo hace polling aporta
-poco *hoy*. Lo que da es (a) un `lifespan` que arranca y para polling, base de
-datos y tareas en un solo sitio, (b) un `/health` HTTP estándar para
-systemd/monitorización y (c) el lugar natural para un panel de administración
-o un webhook más adelante. Su coste en RAM se **mide** en la Fase 6 (⚠️ no se
-ha medido).
+**Sobre FastAPI (retirado):** para un bot que solo hace polling aportaba poco.
+La estructura del código viene de `core/` + `features/` y de la regla de
+dependencias, no de FastAPI. El arranque y la parada (5.2) los orquesta
+`app.py` con `asyncio`. Si algún día se quiere un panel web o un webhook, se
+añade como feature/adaptador aparte (Fase 8) y el HTTP vive **solo** en esa
+capa, así que reintroducirlo no toca `core/` ni `features/`.
+
+**Medición temprana:** la RAM y el disco con aiogram + SQLite se miden en la
+**Fase 0** en el servidor real (no esperar a la 6), junto con Python, SQLite y
+`aiosqlite` (los ⚠️ de arriba).
 
 **Sobre aiogram y el orden de mensajes:** aiogram procesa cada update como una
 tarea independiente (`handle_as_tasks=True`), así que dos mensajes del mismo
@@ -328,7 +337,7 @@ nekita/
 ├── migrations/               0001_inicial.sql, 0002_...sql
 ├── src/nekita/
 │   ├── __main__.py           arranque: `python -m nekita`
-│   ├── app.py                create_app() → FastAPI con lifespan
+│   ├── app.py                run(): orquesta arranque/parada con asyncio (5.2)
 │   ├── config.py             Settings (pydantic-settings), validado una vez
 │   ├── core/
 │   │   ├── bot.py            Bot + Dispatcher + registro de features
@@ -347,7 +356,8 @@ nekita/
 │       ├── images/  (neko, perro, cangrejo, moneda) + providers/ + cache
 │       ├── pole/    (service, repo, router, ranking, games.py, games.toml)
 │       ├── nekomando/ (service, router, data/nekomandos.json)
-│       └── meta/    (health, stats)
+│       ├── meta/    (health, stats)
+│       └── ia/      (Fase 8) cliente de IA remota detrás de una interfaz
 └── tests/
     ├── unit/   integration/ (Telegram falso + BD en memoria)   live/
     └── conftest.py
@@ -358,7 +368,7 @@ Cada `feature/` sigue la misma forma: `__init__.py` (expone `feature`),
 `repo.py` (SQL, solo si guarda datos). **La lógica vive en `service.py` y se
 prueba sin Telegram.**
 
-### 5.2 Ciclo de vida (FastAPI `lifespan`)
+### 5.2 Ciclo de vida (`app.py`, asyncio puro)
 
 Arranque, en este orden (si algo falla → mensaje claro y `exit 1`):
 1. Cargar y validar `Settings` (una vez).
@@ -366,22 +376,18 @@ Arranque, en este orden (si algo falla → mensaje claro y `exit 1`):
 3. Crear el `AsyncClient` HTTP compartido.
 4. Crear `Bot`, registrar features, `getMe` (+ aviso de *Group Privacy*), `setMyCommands`.
 5. Lanzar el scheduler y la tarea de **polling** (con vigilancia: si termina con error, se cierra el proceso con código ≠ 0).
-6. FastAPI queda sirviendo `/health` y `/ready`.
+6. `app.py` espera a la señal de parada o a la caída del polling (sin servidor HTTP). Si hay `WatchdogSec`, notifica a systemd (5.3).
 
 Parada (SIGTERM): parar polling → esperar manejadores en curso (tope 10 s) →
 parar scheduler → cerrar HTTP → `PRAGMA optimize` y cerrar SQLite.
 
-### 5.3 Endpoints HTTP
+### 5.3 Salud (sin servidor HTTP)
 
-| Ruta | Uso | Respuesta |
-|---|---|---|
-| `GET /health` | Vivo (para systemd/monitorización) | `200 {"status":"ok","version":…}` |
-| `GET /ready` | Listo de verdad | `200` si BD abierta **y** el polling reciente sigue vivo; `503` si no |
-
-Escuchan **solo en `127.0.0.1`** (puerto `NEKITA_HTTP_PORT`, 8080). Sin
-autenticación porque no se exponen; si algún día se abren, se añade token
-(Fase 8). El latido de "polling vivo" es una marca de tiempo en memoria que
-actualiza el propio bucle de polling.
+- **No hay puertos abiertos.** Superficie de ataque cero y nada que mantener.
+- **Vivo = el proceso corre.** `systemd` con `Restart=on-failure`; cualquier fallo irrecuperable sale con código ≠ 0 (4.6), así que nunca queda "vivo pero sordo".
+- **Comprobación funcional:** el comando de Telegram `/health` (4.1).
+- **Latido del polling:** marca de tiempo en memoria que actualiza el bucle de polling. Opcional (Fase 8): `WatchdogSec` + `sd_notify` escribiendo en el socket `NOTIFY_SOCKET` (stdlib, sin dependencias) solo mientras el latido sea reciente; si se cuelga, systemd reinicia.
+- Si algún día hace falta HTTP (panel, webhook), es una feature de la Fase 8 con autenticación obligatoria.
 
 ---
 
@@ -395,11 +401,12 @@ Una *feature* es un objeto con un `aiogram.Router` y metadatos:
 # features/ejemplo/__init__.py  (ilustrativo, NO es código a implementar tal cual)
 feature = Feature(
     name="ejemplo",
-    router=router,                  # handlers de la carpeta
+    router=router,  # handlers de la carpeta
     commands=[CommandInfo("ejemplo", "Hace algo", category="otros", admin_only=False)],
-    migrations=None,                # opcional: carpeta propia de SQL
-    on_startup=None, on_shutdown=None,   # ganchos opcionales
-    jobs=[],                        # tareas periódicas opcionales
+    migrations=None,  # opcional: carpeta propia de SQL
+    on_startup=None,
+    on_shutdown=None,  # ganchos opcionales
+    jobs=[],  # tareas periódicas opcionales
 )
 ```
 
@@ -435,10 +442,27 @@ de juguete y comprueba que aparece en `/help`, en `setMyCommands` y en
 | Idea | Dónde encaja | Requiere |
 |---|---|---|
 | Recordatorios de usuario | `features/recordatorios/` + tabla propia + `jobs` | Mini-planificador o APScheduler |
-| IA / LLM | `features/ia/` con proveedor detrás de una interfaz | Cuotas, límites por usuario, coste (ADR previo) |
-| Panel de administración | Rutas FastAPI en `features/admin/` | Autenticación obligatoria |
+| **IA remota (prevista)** | `features/ia/` con proveedor detrás de una interfaz (6.5) | ADR previo; reglas de 6.5 |
+| Avisos proactivos de poles | `jobs` de la feature `pole` (una tarea por pole) | Decisión 15; con ≥3 tareas, valorar APScheduler |
+| Panel de administración | Servidor HTTP propio en `features/admin/` (reintroduce FastAPI o `aiohttp`) | Autenticación obligatoria; decisión 17 |
 | Webhook | Cambiar el modo de recepción en `core/bot.py` | Dominio + HTTPS |
 | Límite de uso por usuario | Middleware en `core/` | Tabla o contador en memoria |
+
+### 6.5 IA remota (prevista, Fase 8)
+
+El modelo **no corre en este servidor**: corre en otro PC (Ollama, llama.cpp,
+vLLM…) accesible por VPN (Tailscale/WireGuard) o en una API en la nube. Para
+el bot es **un cliente HTTP saliente** con `httpx` (ya en el stack), contra un
+endpoint compatible con OpenAI. Sin torch ni modelos en el servidor: RAM y
+disco casi no cambian.
+
+Reglas de diseño:
+1. **Fuera del lock por chat.** La serialización por `chat_id` (sección 3) existe para el orden de las poles; una llamada a la IA (10–30 s) no debe bloquearla. El handler de IA responde en una tarea aparte.
+2. **El otro PC estará apagado a veces:** timeout corto, semáforo de concurrencia, límite por usuario y mensaje de fallo (`Ahora mismo no puedo pensar-nya`). Mismo patrón que las imágenes.
+3. **Privacidad:** se envía solo lo necesario (mensajes que mencionan al bot o un comando explícito), nunca el chat entero; sin guardar el contenido por defecto.
+4. **Interfaz de proveedor** (`complete(messages) -> str`) para cambiar de Ollama a nube sin tocar la feature.
+5. Configuración: `NEKITA_AI_URL`, `NEKITA_AI_MODEL`, `NEKITA_AI_KEY`, `NEKITA_AI_TIMEOUT` (sección 8). Si `NEKITA_AI_URL` está vacío, la feature **no se registra**.
+6. Seguridad de red: el destino es una URL **de confianza configurada por el admin** (excepción explícita a la regla SSRF de la sección 9, que sigue aplicando a las descargas de imagen); la VPN no expone nada del servidor hacia fuera.
 
 ---
 ## 7. Datos (SQLite)
@@ -598,10 +622,15 @@ Se validan **una sola vez** al arrancar: un error se muestra legible y sale con 
 | `NEKITA_TZ` | no | `Europe/Madrid` | Zona IANA válida |
 | `NEKITA_CACHE_SEGUNDOS` | no | `300` | TTL de los lotes de imágenes |
 | `NEKITA_DATA_DIR` | no | `~/.nekita/data` | BD, copias, overrides |
-| `NEKITA_HTTP_PORT` | no | `8080` | `/health` y `/ready` en 127.0.0.1 |
+| `NEKITA_AI_URL` | no | — | (Fase 8) URL base del endpoint de IA remota; vacío = feature desactivada |
+| `NEKITA_AI_MODEL` | no | — | (Fase 8) Nombre del modelo |
+| `NEKITA_AI_KEY` | no | — | (Fase 8) Clave de la API si la hay; nunca se registra en logs |
+| `NEKITA_AI_TIMEOUT` | no | `20` | (Fase 8) Segundos máximos por petición |
 | `NEKITA_LOG_LEVEL` | no | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
 | `NEKITA_LOG_MESSAGES` | no | `false` | Registrar el texto de los mensajes (solo con `DEBUG`) |
 | `NEKITA_BACKUP_HORA` | no | `04:00` | Hora local de la copia diaria |
+| `NEKITA_MAX_HANDLERS` | no | `20` | Handlers simultáneos máximos (9.1) |
+| `NEKITA_BACKUP_COPIA_CMD` | no | — | Comando opcional para copiar cada backup fuera del servidor (p. ej. `rsync`/`rclone`) |
 
 **Cambios respecto a Node:** se retiran `NEKITA_HORA_GUARDADO*` (ya no hay
 guardado diario) y `NEKITA_HORA_LIMPIEZA*` (el reset a las 22:59) **desaparece**:
@@ -627,12 +656,30 @@ daba una configuración usable).
 | Telegram | Respeta `RetryAfter` (429): espera lo indicado y reintenta una vez; `Forbidden` (bot expulsado del grupo) se registra a nivel `INFO` y no es un error |
 | Dependencias | `uv.lock` versionado; `pip-audit` en CI y semanal; Dependabot o Renovate para `uv`/`github-actions` |
 
+### 9.1 Colas y límites (todo en memoria, sin Redis/Celery)
+
+Con 1 core y una sola instancia, `asyncio` ya es la cola. Se usan solo estas piezas:
+
+| Pieza | Para qué | Valor |
+|---|---|---|
+| Lock por `chat_id` | Orden de poles ("oro" → "plata") | 1 por chat, limpieza de inactivos |
+| Semáforo global de handlers | *Backpressure*: tras una caída llegan updates acumulados de golpe; evita picos de RAM | `NEKITA_MAX_HANDLERS` = 20 |
+| Descarte de updates antiguos | No responder a un `/neko` de hace 10 min | > 60 s y no es pole → se ignora |
+| Semáforo de descargas | Memoria al bajar imágenes | 2 |
+| Semáforo de IA | El PC remoto no se satura (6.5) | 1–2 con tope de espera |
+| Limitador por usuario | Cuota de APIs externas | 1 cada 3 s |
+| Escrituras SQLite | Un solo escritor: WAL + `busy_timeout` + una conexión `aiosqlite` (cola natural) | Test de 50 "oro" a la vez |
+| **Cola de salida con ritmo** | Solo si se aprueba la decisión 15 (avisos a muchos grupos): ~1 msg/s por chat y ~30/s global (⚠️ cifras de memoria, verificar) | Condicional; hasta entonces basta `RetryAfter` (sección 9) |
+
+**Idempotencia:** tras un reinicio Telegram puede reenviar el último update; la
+pole es atómica en SQL (7.3), así que no se concede dos veces.
+
 ## 10. Observabilidad
 
 - **Logs** a stdout en formato de texto legible (`journalctl` los recoge); con `NEKITA_LOG_LEVEL=DEBUG` se ven detalles. Cada línea de error con código de referencia.
-- Mismo nivel configurable para `aiogram`, `httpx` y `uvicorn`; `httpx` en `WARNING` salvo `DEBUG` (si no, imprime URLs con parámetros).
+- Mismo nivel configurable para `aiogram` y `httpx`; `httpx` en `WARNING` salvo `DEBUG` (si no, imprime URLs con parámetros).
 - `journald` limita su tamaño (`SystemMaxUse=200M` recomendado) para proteger los 8 GB.
-- **Salud:** `/health` y `/ready` (5.3) + `systemd` `WatchdogSec` opcional (Fase 8).
+- **Salud:** sin puertos; `Restart=on-failure` de systemd, comando `/health` de Telegram y `WatchdogSec` opcional (5.3, Fase 8).
 - **Sin métricas externas** por ahora: `/stats` cubre el uso funcional; RSS y CPU se miran con `systemctl status`/`journalctl`.
 
 ---
@@ -672,7 +719,8 @@ se ajustan tras la Fase 3).
 - Unidad `nekita.service` con `Restart=on-failure`, `RestartSec=5`, `MemoryMax=400M`, `NoNewPrivileges=true`, `ProtectSystem=strict`, `ReadWritePaths=/var/lib/nekita`, `PrivateTmp=true`, `ProtectHome=true`.
 - `nekita-backup.timer` solo si se prefiere desacoplar la copia del proceso; por defecto la hace el scheduler interno (7.7).
 - **Actualizar:** `git pull` → `uv sync --frozen --no-dev` → `systemctl restart nekita` (las migraciones corren solas al arrancar y son **hacia delante**; antes de migrar se hace copia automática).
-- **Docker** (opcional): `python:3.13-slim`, usuario no root, `HEALTHCHECK` contra `/health`, `mem_limit`, volumen de datos. Se escribe solo si lo pides (decisión 16).
+- **Docker: no se usa en producción** (el motor y la imagen restan cientos de MB de los 8 GB y añaden un demonio en 1 GB de RAM; el sandbox de systemd basta). Opcional: `python:3.13-slim`, usuario no root, `mem_limit`, volumen de datos; solo si lo pides.
+- **Redis, ORM y colas: no** (una instancia, un SQLite local).
 - **Retirar la versión Node:** parar el servicio/contenedor anterior **antes** de arrancar este (un mismo token no admite dos `getUpdates`: error 409).
 
 ---
@@ -685,7 +733,7 @@ la anterior en rojo.
 
 | Fase | Nombre | Resultado visible | Depende de |
 |---|---|---|---|
-| 0 | Cimientos | Proyecto, calidad y CI en verde; `/health` responde | — |
+| 0 | Cimientos | Proyecto, calidad y CI en verde; arranca y se para limpio; medición de RAM/disco en el servidor real | — |
 | 1 | Núcleo de datos | BD + migraciones + copias + importador de Node | 0 |
 | 2 | Núcleo del bot | Bot arranca, polling, errores, admin; `/help` y menú automáticos | 0, 1 |
 | 3 | Funciones sencillas | `/start /hola /hora /dia /id /health /stats` + feature de juguete | 2 |
@@ -693,21 +741,21 @@ la anterior en rojo.
 | 5 | Poles | Varias poles independientes por datos, atómicas y sin cron | 1, 2 |
 | 6 | Imágenes | `/neko /perro /cangrejo /moneda` con caché y plan B | 2 |
 | 7 | Operación | systemd, copias, restauración, medición, prueba real | 1–6 |
-| 8 | Extras (opcional) | Webhook, panel, IA, recordatorios… | 7 |
+| 8 | Extras (opcional) | **IA remota (prevista)**, avisos de poles, `WatchdogSec`, webhook, panel… | 7 |
 
 ### Fase 0 — Cimientos
 
 **Entregables**
 - [ ] Rama `python` con `pyproject.toml` (sección 3), `uv.lock`, `.gitignore`, `LICENSE`, `README` mínimo y `.env.example` completo.
-- [ ] Estructura de carpetas (5.1) con `__init__.py`; `__main__.py` y `app.py` con `lifespan` vacío.
+- [ ] Estructura de carpetas (5.1) con `__init__.py`; `__main__.py` y `app.py` con el bucle `asyncio` de arranque/parada y manejo de SIGTERM/SIGINT.
 - [ ] `config.py` con validación y mensaje legible si falta `NEKITA_TOKEN` (`exit 1`).
-- [ ] `/health` y `/ready` (stub) en FastAPI, solo en `127.0.0.1`.
+- [ ] **Medición en el servidor real:** `python3 --version`, versión de SQLite, instalar dependencias, comprobar `aiosqlite` y medir RSS en reposo y disco del venv (presupuesto de la sección 2).
 - [ ] Logging configurable (`NEKITA_LOG_LEVEL`) con enmascarado de token.
 - [ ] CI (GitHub Actions): `ruff check`, `ruff format --check`, `mypy`, `pytest --cov`, `pip-audit`, `gitleaks`; solo Python 3.13.
 - [ ] Test de la regla de dependencias (`core` no importa `features`; una feature no importa otra).
-- [ ] ADR corto `DOCS/ADR/0001`: por qué aiogram + FastAPI + SQLite + systemd.
+- [ ] ADR corto `DOCS/ADR/0001`: por qué aiogram + asyncio (sin FastAPI) + SQLite + systemd (sin Docker ni Redis).
 
-**Hecho cuando:** `uv run pytest`, `ruff` y `mypy --strict` pasan en limpio; arrancar sin token da un mensaje claro y código 1; con un token cualquiera arranca FastAPI y `curl 127.0.0.1:8080/health` da 200; se comprobó que `aiosqlite` instala y funciona con 3.13.
+**Hecho cuando:** `uv run pytest`, `ruff` y `mypy --strict` pasan en limpio; arrancar sin token da un mensaje claro y código 1; con un token cualquiera el proceso arranca, intenta conectar y con SIGTERM se cierra limpio en < 5 s; se comprobó en el servidor real que `aiosqlite` instala y funciona con 3.13 y se anotó el RSS/disco medidos.
 
 **Riesgos:** `mypy --strict` con aiogram puede pedir ajustes (`# type: ignore` justificados); SQLite del servidor sin `STRICT` (sección 2).
 
@@ -731,8 +779,9 @@ la anterior en rojo.
 - [ ] `core/feature.py` (contrato 6.1) y `features/__init__.py` con la lista explícita.
 - [ ] `core/bot.py`: `Bot`, `Dispatcher`, registro de features, `getMe` + aviso de *Group Privacy*, `setMyCommands` (sin admin).
 - [ ] Middlewares: usuario/`is_admin`, **serialización por chat**, estadísticas (solo éxito), errores con referencia, filtro `@OtroBot`, limitador de uso.
+- [ ] **Colas simples (sin broker externo, 9.1):** semáforo global de handlers (`NEKITA_MAX_HANDLERS`, 20) y descarte de updates de comandos de imagen/IA con más de 60 s de antigüedad (las poles **nunca** se descartan).
 - [ ] Guard `admin_only` con el mensaje literal del Apéndice A.
-- [ ] Vigilancia del polling: caída irrecuperable → `exit` ≠ 0; `/ready` refleja el latido.
+- [ ] Vigilancia del polling: caída irrecuperable → `exit` ≠ 0; el latido del polling queda disponible en memoria (5.3).
 - [ ] Parada limpia (5.2).
 - [ ] **Sesión falsa de Telegram** y fixtures de integración (sección 11): hace seguras las fases siguientes.
 
@@ -768,6 +817,7 @@ la anterior en rojo.
 - [ ] Las tres poles de partida (`pole`, `canaria`, `patitos`) con los puntos del ejemplo de 4.3 (3/2/1; 1; 1).
 - [ ] `features/pole`: repo SQL (7.3), servicio, router (solo grupos) y **un comando de ranking por pole**, registrados desde el fichero (el contrato de feature, 6.1, debe permitir comandos dinámicos: se verifica en la Fase 2).
 - [ ] Top 10 por pole y grupo; mensajes literales (Apéndice A).
+- [ ] Solo si se aprueba la decisión 15: cola de salida con ritmo y `jobs` por pole (9.1).
 - [ ] Reclamación de puntos legado por nombre (pole `pole`).
 
 **Hecho cuando:** pasan los tests (a)–(j) de 7.3; en privado se ignora; el top 10 cabe en 4096 caracteres con nombres largos; cambiar de alias no cambia los puntos; añadir una pole de prueba **solo editando `games.toml`** la hace funcionar con su comando, sin tocar código.
@@ -793,6 +843,8 @@ la anterior en rojo.
 - [ ] `deploy/nekita.service`, `install.sh` (usuario, carpetas, permisos), tope de `journald` y swap opcional.
 - [ ] **Medición real** de RAM/CPU/disco contra el presupuesto de la sección 2, anotada en un ADR.
 - [ ] Copia y **restauración probada** (7.7) y procedimiento de actualización.
+- [ ] **Copia externa** de los backups (`NEKITA_BACKUP_COPIA_CMD`: otro PC por la VPN, rsync/rclone): `VACUUM INTO` en el mismo disco no protege de un fallo del disco.
+- [ ] `unattended-upgrades` activo y reloj sincronizado (`systemd-timesyncd`/`timedatectl`): las poles dependen de la hora.
 - [ ] README completo: instalación, *Group Privacy*, variables, equivalencias con Node, problemas frecuentes.
 - [ ] Prueba manual con **token real** en un grupo de prueba: todos los comandos, pole completa, reinicio a mitad de día, `kill -9` y arranque. ⚠️ Nada de esto se ha probado nunca contra Telegram real.
 - [ ] Importar los datos reales de producción (tras revisar el fichero) y retirar el servicio Node.
@@ -802,9 +854,11 @@ la anterior en rojo.
 
 ### Fase 8 — Extras (opcional; cada uno requiere decisión)
 
-Webhook, panel admin, comando de admin para editar nekomandos, `WatchdogSec`,
-IA, recordatorios, límite de uso persistente, métricas. Cada uno empieza con un
-ADR corto (qué, coste en RAM, riesgo) y se construye **como una feature** (6.1).
+**IA remota (prevista, 6.5)**, avisos proactivos de poles (decisión 15),
+`WatchdogSec`, webhook, panel admin (reintroduciría HTTP), comando de admin
+para editar nekomandos, recordatorios, límite de uso persistente, métricas.
+Cada uno empieza con un ADR corto (qué, coste en RAM, riesgo) y se construye
+**como una feature** (6.1).
 
 ---
 
@@ -819,13 +873,15 @@ ADR corto (qué, coste en RAM, riesgo) y se construye **como una feature** (6.1)
 | Dos instancias con el mismo token (409) | Media | Medio | Parar Node antes; salida ≠ 0 y aviso claro |
 | Alcance creciente (IA, panel…) | Media | Medio | Fase 8 fuera del camino crítico; ADR por extra |
 | Cambios de API de aiogram | Baja | Medio | `<4`, `uv.lock`, tests de integración |
-| aiogram/FastAPI no encajan con 1 GB | Muy baja | Medio | Medición en Fase 7; alternativa: sin FastAPI (solo `aiohttp` mínimo) |
+| aiogram no encaja con 1 GB | Muy baja | Medio | Medición en la **Fase 0** (servidor real) y en la 7 |
+| IA remota caída o lenta (PC apagado, VPN caída) | Alta | Bajo | Timeouts, semáforo, mensaje de fallo, fuera del lock por chat (6.5) |
 
 ## 15. Fuera de alcance (explícito)
 
-IA/LLM, panel web, varios idiomas, webhook, métricas Prometheus, varias
-instancias o alta disponibilidad, ORM, Redis/colas, y migrar a PostgreSQL.
-Entran solo a través de la Fase 8.
+Servidor HTTP/FastAPI, panel web, varios idiomas, webhook, métricas Prometheus,
+varias instancias o alta disponibilidad, ORM, Redis/colas, Docker en
+producción, y migrar a PostgreSQL. Entran solo a través de la Fase 8. La IA
+remota (6.5) está **prevista** en la Fase 8, no excluida.
 
 ## 16. Decisiones pendientes de confirmar
 
@@ -847,6 +903,10 @@ Se aplicó la opción marcada ✔ por defecto. **Cambiarlas es barato ahora, car
 | 12 | Desempate en el ranking | **alfabético** · quien llegó antes · compartir puesto | ✔ alfabético (confirmado) |
 | 13 | Definir poles | **fichero `games.toml` + reinicio** · comandos desde el chat | ✔ fichero |
 | 14 | Poles de los nekomandos (`peninsular`, `andaluza`, `palitos`, `cuack`, `… canarias`) | siguen siendo texto · convertirlas en poles | ⚠️ siguen siendo texto hasta que se definan (4.3.2) |
+| 15 | Avisos proactivos de las poles (el bot escribe solo a la hora de cada pole) | **no** · sí (requiere scheduler, `jobs` por pole) | ⚠️ **pendiente**; por defecto no (sin cron, 7.3) |
+| 16 | IA | **remota** (PC por VPN o nube), cliente HTTP saliente · local en el servidor | ✔ remota, Fase 8 (6.5) |
+| 17 | Servidor HTTP (FastAPI) | **ninguno** · FastAPI para un futuro panel | ✔ ninguno (más ligero; panel = Fase 8) |
+| 18 | Redis / Docker en producción | **no / no (systemd)** · sí | ✔ no / no |
 
 ---
 ## Apéndice A — Textos literales (contrato)

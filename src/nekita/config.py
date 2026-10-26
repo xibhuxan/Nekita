@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     )
 
     token: SecretStr
+    api_url: str = ""  # servidor Bot API alternativo (pruebas o Bot API local); vacío = Telegram
     master_id: str = ""
     tz: str = "Europe/Madrid"
     cache_segundos: int = Field(default=300, ge=0)

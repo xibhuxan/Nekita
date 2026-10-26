@@ -1,1 +1,12 @@
-"""Features del bot. La lista explícita de features se añadirá en la Fase 2."""
+"""Lista explícita de features (spec 6.1). Añadir una función = una línea aquí."""
+
+from __future__ import annotations
+
+from nekita.core.feature import Feature
+from nekita.features import meta
+
+
+def load_features() -> list[Feature]:
+    return [
+        meta.build(),
+    ]

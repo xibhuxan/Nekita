@@ -10,7 +10,14 @@ from typing import Any
 
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
-from aiogram.methods import GetMe, GetUpdates, SendMessage, SetMyCommands, TelegramMethod
+from aiogram.methods import (
+    CopyMessage,
+    GetMe,
+    GetUpdates,
+    SendMessage,
+    SetMyCommands,
+    TelegramMethod,
+)
 from aiogram.methods.base import TelegramType
 from aiogram.types import Chat, Message, Update, User
 from aiogram.types import Message as TgMessage
@@ -27,6 +34,7 @@ class FakeTelegram(BaseSession):
         self.updates: asyncio.Queue[Update] = asyncio.Queue()
         self.calls: list[TelegramMethod[Any]] = []
         self.errors: dict[type[TelegramMethod[Any]], list[Exception]] = {}
+        self.chat_errors: dict[int, Exception] = {}  # error permanente al enviar a ese chat
         self.can_read_all = can_read_all_group_messages
         self._ids = itertools.count(1)
         self._msg_ids = itertools.count(1000)
@@ -69,6 +77,42 @@ class FakeTelegram(BaseSession):
         )
         self.updates.put_nowait(update)
 
+    def feed_callback(self, data: str, *, user_id: int = 7, chat_id: int = 7) -> None:
+        update = Update.model_validate(
+            {
+                "update_id": next(self._ids),
+                "callback_query": {
+                    "id": str(next(self._ids)),
+                    "from": {"id": user_id, "is_bot": False, "first_name": "Admin"},
+                    "chat_instance": "x",
+                    "data": data,
+                    "message": {
+                        "message_id": next(self._msg_ids),
+                        "date": int(time.time()),
+                        "chat": {"id": chat_id, "type": "private"},
+                        "text": "anuncio",
+                    },
+                },
+            }
+        )
+        self.updates.put_nowait(update)
+
+    def sent_to(self, chat_id: int) -> list[str]:
+        return [
+            str(c.text) for c in self.calls if isinstance(c, SendMessage) and c.chat_id == chat_id
+        ]
+
+    def copies(self) -> list[CopyMessage]:
+        return [c for c in self.calls if isinstance(c, CopyMessage)]
+
+    def button_data(self) -> list[str]:
+        """`callback_data` de los botones del último mensaje con teclado."""
+        for c in reversed(self.calls):
+            markup = getattr(c, "reply_markup", None)
+            if markup is not None and getattr(markup, "inline_keyboard", None):
+                return [b.callback_data or "" for fila in markup.inline_keyboard for b in fila]
+        return []
+
     # --- salida ---
 
     def sent_texts(self) -> list[str]:
@@ -101,6 +145,9 @@ class FakeTelegram(BaseSession):
             except TimeoutError:
                 return []  # type: ignore[return-value]
             return [update]  # type: ignore[return-value]
+        destino = getattr(method, "chat_id", None)
+        if isinstance(destino, int) and destino in self.chat_errors:
+            raise self.chat_errors[destino]
         self.calls.append(method)
         if isinstance(method, GetMe):
             return User(  # type: ignore[return-value]

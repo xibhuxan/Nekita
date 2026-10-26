@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from nekita.core.feature import Feature
-from nekita.features import meta
+from nekita.features import anuncios, meta
 
 
 def load_features() -> list[Feature]:
     return [
         meta.build(),
+        anuncios.build(),
     ]

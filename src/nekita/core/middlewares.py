@@ -18,6 +18,7 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject
 
+from nekita.core.chats import GROUP_TYPES, upsert_chat
 from nekita.core.context import AppContext
 from nekita.core.errors import report_failure
 from nekita.core.feature import CommandInfo
@@ -42,6 +43,17 @@ def parse_command(text: str | None) -> tuple[str, str | None] | None:
     return m.group(1).lower(), m.group(2)
 
 
+class ContextMiddleware(BaseMiddleware):
+    """Inyecta `ctx` en TODOS los eventos (botones, altas/bajas del bot...), no solo mensajes."""
+
+    def __init__(self, ctx: AppContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, handler: Handler, event: TelegramObject, data: dict[str, Any]) -> Any:
+        data["ctx"] = self._ctx
+        return await handler(event, data)
+
+
 class MessagePipeline(BaseMiddleware):
     def __init__(
         self,
@@ -55,6 +67,7 @@ class MessagePipeline(BaseMiddleware):
         self._locks = KeyedLock()
         self._cooldown = cooldown or Cooldown()
         self._inflight: set[asyncio.Task[Any]] = set()
+        self._known_chats: dict[int, str | None] = {}  # chat_id -> título ya guardado
 
     async def drain(self, timeout: float) -> int:  # noqa: ASYNC109
         """Espera a los handlers en curso; devuelve cuántos quedaron sin terminar."""
@@ -76,11 +89,12 @@ class MessagePipeline(BaseMiddleware):
                 return None  # /comando@OtroBot: no es para este bot
             info = self._ctx.registry.get(name)
 
+        await self._track_chat(event)
         user = event.from_user
         is_admin = user is not None and user.id == self._ctx.settings.admin_id
         data["ctx"] = self._ctx
         data["is_admin"] = is_admin
-        data["command"] = info
+        data["command_info"] = info
 
         if info is not None:
             if info.drop_if_stale and self._age(event) > STALE_SECONDS:
@@ -109,6 +123,17 @@ class MessagePipeline(BaseMiddleware):
         finally:
             if task is not None:
                 self._inflight.discard(task)
+
+    async def _track_chat(self, message: Message) -> None:
+        """Apunta el grupo la primera vez que se le ve (y si cambia de título)."""
+        chat = message.chat
+        if chat.type not in GROUP_TYPES or self._known_chats.get(chat.id, "") == chat.title:
+            return
+        try:
+            await upsert_chat(self._ctx.db, chat.id, chat.title, chat.type)
+            self._known_chats[chat.id] = chat.title
+        except Exception:
+            log.exception("No se pudo registrar el grupo %s", chat.id)
 
     async def _is_for_me(self, target: str, data: dict[str, Any]) -> bool:
         me = await data["bot"].me()

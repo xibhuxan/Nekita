@@ -315,6 +315,23 @@ En los nekomandos actuales (Apéndice B) hay frases que sugieren más poles. **N
 - **Apagado limpio:** con SIGTERM/SIGINT se detiene el polling, se esperan los manejadores en curso (con tope) y se cierra la base de datos.
 - **Fallo de polling irrecuperable** (token revocado, 409 por otra instancia): el proceso **termina con código ≠ 0** para que systemd lo reinicie; nunca "vivo pero sordo".
 
+### 4.7 Anuncios del administrador
+
+Feature `anuncios` (solo `NEKITA_MASTER_ID`, solo por **chat privado** con el bot):
+
+| Comando | Qué hace |
+|---|---|
+| `/grupos` | Lista numerada de los grupos activos |
+| `/anuncio <texto>` | Anuncio a **todos** los grupos activos |
+| `/anuncio_a <nº o id> [...] <texto>` | Anuncio a grupos concretos (nº de `/grupos` o id de chat) |
+
+- **Responder a un mensaje** con el comando lo **copia** tal cual (foto, formato, enlaces) en vez de usar texto.
+- **Siempre hay confirmación:** vista previa y botones ✅ Enviar / ❌ Cancelar. Caduca a los 5 min, se usa una sola vez y solo vale para quien lo preparó.
+- **Envío con ritmo** (≈15 msg/s, `core/broadcast.py`). Un fallo no detiene al resto. Si expulsaron al bot, el grupo se marca inactivo; si migró a supergrupo, se actualiza el id.
+- Al terminar llega un **informe** (enviados / fallidos con motivo) y queda registrado en la tabla `announcements`.
+- Los grupos se registran al ver actividad o al añadir al bot (`core/chat_tracking.py`); Telegram no permite listar los grupos del bot. Los grupos que ya existían antes de esta versión aparecen cuando escriben algo.
+
+
 ---
 ## 5. Arquitectura
 

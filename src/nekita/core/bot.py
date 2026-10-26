@@ -14,9 +14,10 @@ from aiogram.client.telegram import TelegramAPIServer
 from aiogram.exceptions import TelegramAPIError, TelegramNetworkError, TelegramUnauthorizedError
 from aiogram.types import User
 
+from nekita.core import chat_tracking
 from nekita.core.context import AppContext
 from nekita.core.feature import Feature
-from nekita.core.middlewares import MessagePipeline
+from nekita.core.middlewares import ContextMiddleware, MessagePipeline
 from nekita.core.telegram import PollingHealth, TelegramGuard
 
 log = logging.getLogger(__name__)
@@ -50,7 +51,9 @@ class BotRuntime:
         self.bot.session.middleware.register(TelegramGuard(self.health))
         self.dispatcher = Dispatcher()
         self.pipeline = MessagePipeline(ctx)
+        self.dispatcher.update.outer_middleware(ContextMiddleware(ctx))
         self.dispatcher.message.outer_middleware(self.pipeline)
+        self.dispatcher.include_router(chat_tracking.build_router())
         for feature in self.features:
             self.dispatcher.include_router(feature.router)
         self._polling: asyncio.Task[None] | None = None

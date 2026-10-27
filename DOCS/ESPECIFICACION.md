@@ -57,7 +57,7 @@ varias instancias (es **una** instancia con un SQLite local), ORM, colas, Redis.
 
 | Métrica | Objetivo |
 |---|---|
-| RSS en reposo | ≤ 150 MB |
+| RSS en reposo | ≤ 200 MB (ADR 0002; medido 187 MB) |
 | RSS en pico (descargando una imagen) | ≤ 250 MB |
 | CPU en reposo | < 2 % de un core |
 | venv + código en disco | ≤ 400 MB |

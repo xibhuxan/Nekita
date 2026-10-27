@@ -1,0 +1,46 @@
+[Unit]
+Description=Nekita, bot de Telegram
+Documentation=https://github.com/Xibhu/Nekita
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=nekita
+Group=nekita
+WorkingDirectory=/opt/nekita
+EnvironmentFile=/etc/nekita/nekita.env
+Environment=NEKITA_DATA_DIR=/var/lib/nekita
+ExecStart=/opt/nekita/.venv/bin/python -m nekita
+# Si el polling es irrecuperable (token revocado, 409) el bot sale con codigo != 0
+Restart=on-failure
+RestartSec=5
+# La parada limpia espera hasta 10 s a los handlers en curso
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+# Recursos (1 GB de RAM en el servidor)
+MemoryMax=400M
+TasksMax=64
+
+# Sandbox
+StateDirectory=nekita
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

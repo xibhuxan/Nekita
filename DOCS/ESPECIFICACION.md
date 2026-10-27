@@ -138,7 +138,7 @@ exactos están en el Apéndice A.
 | `/health` | meta | Comprueba que el bot está vivo | `🐱 Nekita está viva! v<versión>` |
 | `/stats` | meta | Estadísticas del bot (solo admin) | Ver 4.6 |
 
-✅ Descripciones y categorías **verificadas** una a una contra los `@Command()` de la rama `node-final`.
+✅ Descripciones y categorías **verificadas** una a una contra los comandos de la versión anterior (Node).
 
 Reglas comunes:
 - Los comandos se **publican solos** en el menú "/" (`setMyCommands`); los `admin_only` **no**. Best-effort: si falla, el bot arranca igualmente.
@@ -811,7 +811,7 @@ la anterior en rojo.
 **Entregables**
 - [ ] `features/start` (`/start`, `/hola`, `/help` generado), `features/info` (`/hora`, `/dia`, `/id`), `features/meta` (`/health`, `/stats` con comandos y poles separados).
 - [ ] `core/timeutil.py`: formatos y zonas, con tests en `TZ=UTC` y `Europe/Madrid`.
-- [ ] Descripciones del menú copiadas de `node-final` (aviso en 4.1).
+- [ ] Descripciones del menú copiadas de la versión anterior (aviso en 4.1).
 - [ ] Test de la **receta 6.3**: una feature de juguete aparece sola en `/help`, el menú y `/stats`.
 
 **Hecho cuando:** todos los textos coinciden con el Apéndice A (test con los literales); `/help` no muestra `/stats` a un no admin; `/dia` entre las 00:00 y las 02:00 de España da el día correcto.
@@ -997,11 +997,9 @@ Claves ya normalizadas ✅ (`nekomandos.data.ts`). Sustituciones `{hora:<zona>}`
 
 | Qué | De dónde |
 |---|---|
-| Comportamiento y textos | Rama `node-final` (commit `bb3ecc8`), leído del código |
-| Fallos conocidos y su causa | `DOCS/PLAN-ENDURECIMIENTO.md` de la versión Node (solo en `node-final`) |
-| Formato de datos a importar | `chat-state.manager.ts` y `persistence.service.ts` de `node-final` |
-| Versiones de librerías | Resolución real con `uv` en Python 3.13.16 el 18-10-2026 |
-| Historial de Python antiguo | Rama `backup/python-legacy` (solo referencia; no se reutiliza código) |
+| Comportamiento y textos | Versión anterior del bot (Node/NestJS), leída del código |
+| Formato de datos a importar | `grupos_pole.json` de esa versión (sección 7.6) |
+| Versiones de librerías | Resolución real con `uv` en Python 3.13 el 18-10-2026 |
 
-Para consultar cualquier fichero de la versión anterior:
-`git show node-final:<ruta>` (p. ej. `git show node-final:src/modules/pole/pole.service.ts`).
+El código anterior ya no forma parte del repositorio; solo se conserva el importador
+de sus datos (`core/importer.py`).
